@@ -8,7 +8,6 @@ import (
 	"io"
 	"math"
 	"os"
-	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/nacl/box"
@@ -16,7 +15,7 @@ import (
 
 func usage() {
 	fmt.Fprintln(os.Stderr,
-		`Secret is a simple command for exchanging sensitive data over public networks")
+		`Secret is a simple command for exchanging sensitive data over public networks
 such as email or Discord, and saving it to your home directory.
 
 General format:
@@ -38,11 +37,7 @@ File Commands:
   import <name> [file]         - import the operating system file into your secrets, encrypting it as we go
   cat <name>                   - print the decrypted contents of the previously saved file <name>
   rm <name>                    - Delete the secret called <name>. Forever!
-  ls                           - List files that have been previously saved.
-
-Key Commands:
-  generate <name>              - Generate an application secret (go code)
-  topic-key <prefix> <topic> <id> - Generate (and save) a kafka topic keypair`)
+  ls                           - List files that have been previously saved.`)
 
 	os.Exit(1)
 }
@@ -399,71 +394,6 @@ func cmdLs(config *Configuration, args []string) error {
 	return nil
 }
 
-// secret topic-key prefix topic key-id
-// Generates a new public/private key pair, saves them,
-// then prints the names to stdout.
-func cmdTopicKey(config *Configuration, args []string) error {
-	if len(args) != 3 {
-		usage()
-	}
-
-	keyid, err := strconv.Atoi(args[2])
-	if err != nil {
-		return err
-	}
-
-	publicFilename := fmt.Sprintf("topic-public-%s-%s-%d", args[0], args[1], keyid)
-	privateFilename := fmt.Sprintf("topic-private-%s-%s-%d", args[0], args[1], keyid)
-
-	public, private, err := box.GenerateKey(rand.Reader)
-	if err != nil {
-		return err
-	}
-
-	if err := config.SaveFile(publicFilename, public[:]); err != nil {
-		return err
-	}
-
-	if err := config.SaveFile(privateFilename, private[:]); err != nil {
-		return err
-	}
-
-	fmt.Println(publicFilename)
-	fmt.Println(privateFilename)
-
-	return nil
-}
-
-// Generates a Go function containing app-specific private and public keys.
-// In the future, these keys will be used to grant password-less access to
-// files in a user's secret store.
-func cmdGenerate(args []string) error {
-	if len(args) != 1 {
-		usage()
-	}
-
-	public, private, err := box.GenerateKey(rand.Reader)
-	if err != nil {
-		return err
-	}
-
-	userID := args[len(args)-1]
-
-	fmt.Println("//")
-	fmt.Println("// These keys are used to allow end-users to grant access to credentials.")
-	fmt.Println("// They allow users to grant access so that the private key is not needed.")
-	fmt.Println("// Credentials are simply TOML files stored using `secret save`.")
-	fmt.Println("//")
-	fmt.Println("func getCredentials(filename string) (*secret.KeyConfig, error) {")
-	fmt.Printf("  principal := \"%s\"\n", userID)
-	fmt.Printf("	 applicationPublicKey := %#v\n", public[:])
-	fmt.Printf("	 applicationPrivateKey := %#v\n", private[:])
-	fmt.Println("	return secret.GetSecretKeyConfig(principal, applicationPublicKey, applicationPrivateKey, filename)")
-	fmt.Println("}")
-
-	return nil
-}
-
 // Import an unencrypted file into Secret. This encrypts the file with your public key
 // before storing it. It's used to e.g. import a TLS certificate directly from a file.
 //
@@ -554,10 +484,6 @@ func main() {
 		err = cmdDecrypt(config, args)
 	case "import":
 		err = cmdImport(config, args)
-	case "generate":
-		err = cmdGenerate(args)
-	case "topic-key":
-		err = cmdTopicKey(config, args)
 	case "help", "--help", "-h":
 		usage()
 	default:
