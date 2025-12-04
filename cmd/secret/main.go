@@ -16,7 +16,7 @@ import (
 func usage(msg ...any) {
 	fmt.Fprintln(os.Stderr,
 		`Secret is a simple command for exchanging sensitive data over public networks
-such as email or Discord, and saving it to your home directory.
+such as email, Teams or Discord, and saving it to your home directory.
 
 General format:
 
@@ -41,7 +41,7 @@ File Commands:
 
 	if len(msg) > 0 {
 		fmt.Println()
-		fmt.Println(msg)
+		fmt.Println(msg...)
 		fmt.Println()
 	}
 
