@@ -34,8 +34,26 @@ jobs:
           [[ "$GOOS" == "windows" ]] && ext=".exe"
           go build -o secret_${GOOS}_${GOARCH}${ext} ./cmd/secret
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: secret_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: secret_*
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Delete existing latest release
+        run: gh release delete latest --cleanup-tag --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          prerelease: false
           files: secret_*
