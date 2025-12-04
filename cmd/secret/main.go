@@ -168,6 +168,8 @@ func cmdAdd(config *Configuration, args []string) error {
 		usage()
 	}
 
+	peerId := strings.ToLower(args[0])
+
 	entryBytes, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return err
@@ -184,16 +186,15 @@ func cmdAdd(config *Configuration, args []string) error {
 		return err
 	}
 
-	if entry.PeerID != args[0] {
-		exit(2, fmt.Errorf("The public key belongs to %s, not %s", entry.PeerID, args[0]))
-
+	if strings.ToLower(entry.PeerID) != peerId {
+		exit(2, fmt.Errorf("The public key belongs to %s, not %s", entry.PeerID, peerId))
 	}
 
 	if config.Peers == nil {
 		config.Peers = make(map[string]Peer)
 	}
 
-	config.Peers[args[0]] = entry
+	config.Peers[peerId] = entry
 	return config.Save()
 }
 
@@ -420,10 +421,8 @@ func main() {
 		usage()
 	}
 
-	store, err := GetSecretStore()
-	if err != nil {
-		exit(1, err)
-	}
+	var store string
+	var err error
 
 	// -f option allows us to specify a different configuration folder.
 	if args[1] == "-f" {
@@ -433,6 +432,11 @@ func main() {
 
 		store = args[2]
 		args = args[2:]
+	} else {
+		store, err = GetSecretStore()
+		if err != nil {
+			exit(1, err)
+		}
 	}
 
 	config, err := LoadSecretConfiguration(store)
