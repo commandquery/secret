@@ -45,9 +45,10 @@ type Message struct {
 	Data      []byte
 }
 
+// User is a peer who's enrolled in this server instance.
 type User struct {
 	lock      sync.Mutex
-	UserID    string     `json:"userId"`
+	PeerID    string     `json:"peerID"`
 	PublicKey []byte     `json:"publicKey"`
 	Messages  []*Message `json:"-"` // messages are transient, at least for now.
 }
@@ -135,7 +136,6 @@ func (server *SecretServer) Authenticate(r *http.Request) (*User, error) {
 		return nil, errors.New("missing signature header")
 	}
 
-	log.Println("server: received signature: " + sig)
 	// Signature is base64-encoded JSON
 	js, err := base64.StdEncoding.DecodeString(sig)
 	if err != nil {
@@ -165,7 +165,7 @@ func (server *SecretServer) Authenticate(r *http.Request) (*User, error) {
 	var out []byte
 	plaintext, ok := box.Open(out, ciphertext[25:], &nonce, To32(peer.PublicKey), To32(server.PrivateKey))
 	if !ok {
-		return nil, fmt.Errorf("unable to authenticate message from %s", peer.UserID)
+		return nil, fmt.Errorf("unable to authenticate message from %s", peer.PeerID)
 	}
 
 	timestamp, err := strconv.ParseInt(string(plaintext), 10, 64)
@@ -209,8 +209,8 @@ func (server *SecretServer) handleEnrol(w http.ResponseWriter, r *http.Request) 
 	server.lock.Lock()
 	defer server.lock.Unlock()
 
-	userID := r.PathValue("peer")
-	log.Println("received enrol request for user:", userID)
+	peerID := r.PathValue("peer")
+	log.Println("received enrol request for user:", peerID)
 
 	peerKey, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -222,7 +222,7 @@ func (server *SecretServer) handleEnrol(w http.ResponseWriter, r *http.Request) 
 	log.Println("received peer key", base64.StdEncoding.EncodeToString(peerKey))
 
 	// never override an existing user's public key.
-	existingUser, ok := server.GetUser(userID)
+	existingUser, ok := server.GetUser(peerID)
 	if ok {
 		// user can re-enrol with their existing public key.
 		if bytes.Equal(existingUser.PublicKey, peerKey) {
@@ -236,11 +236,11 @@ func (server *SecretServer) handleEnrol(w http.ResponseWriter, r *http.Request) 
 	}
 
 	user := &User{
-		UserID:    userID,
+		PeerID:    peerID,
 		PublicKey: peerKey,
 	}
 
-	server.Users[userID] = user
+	server.Users[peerID] = user
 
 	if err = server.Save(); err != nil {
 		http.Error(w, "unable to enrol user", http.StatusInternalServerError)
@@ -319,7 +319,7 @@ func (server *SecretServer) handleInbox(w http.ResponseWriter, r *http.Request) 
 	for _, msg := range peer.Messages {
 		inbox.Messages = append(inbox.Messages, InboxMessage{
 			ID:        msg.ID,
-			Sender:    msg.Sender.UserID,
+			Sender:    msg.Sender.PeerID,
 			Timestamp: msg.Timestamp.Unix(),
 			Size:      len(msg.Data),
 		})
@@ -359,6 +359,7 @@ func (server *SecretServer) handleMessage(w http.ResponseWriter, r *http.Request
 	id := r.PathValue("id")
 	if len(id) != 8 && len(id) != 36 {
 		http.Error(w, "invalid message id", http.StatusBadRequest)
+		return
 	}
 
 	id = strings.ToLower(id)
@@ -380,7 +381,7 @@ func (server *SecretServer) handleMessage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	w.Header().Add("Peer-ID", selected.Sender.UserID)
+	w.Header().Add("Peer-ID", selected.Sender.PeerID)
 	w.Header().Add("Content-Type", "application/octet-stream")
 	_, _ = w.Write(selected.Data)
 }

@@ -7,26 +7,78 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"time"
 )
 
+// GetPeer returns the public key for a given peer (if known).
+func (endpoint *Endpoint) GetPeer(peerId string) (*Peer, error) {
+	if endpoint.Peers != nil {
+		entry, ok := endpoint.Peers[peerId]
+		if ok {
+			return entry, nil
+		}
+	}
+
+	u, err := url.Parse(endpoint.URL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid server URL: %w", err)
+	}
+	u.Path = path.Join(u.Path, "publickey", url.PathEscape(peerId))
+
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("unexpected error: %w", err)
+	}
+	req.Header.Set("Signature", endpoint.GetSignature())
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("unable to contact server: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("send failed: %s: %s", resp.Status, body)
+	}
+
+	key, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read public key: %w", err)
+	}
+
+	if len(key) != 32 {
+		return nil, fmt.Errorf("invalid public key length: %d", len(key))
+	}
+
+	fmt.Println("Adding peer", peerId)
+	peer := &Peer{
+		PeerID:    peerId,
+		PublicKey: key,
+	}
+
+	endpoint.Peers[peerId] = peer
+	return peer, nil
+}
+
 // GetSignature returns a Signature header, which is just the peer ID
 // followed by the current timestamp, encrypted for the server itself.
-// This authenticates us to the server, giving us access control.
+// This authenticates us to the server within the request header, giving
+// us strong access control without a handshake.
 func (endpoint *Endpoint) GetSignature() string {
 	msg := fmt.Sprintf("%d", time.Now().Unix())
-
-	//log.Printf("signing with public key: %s", base64.StdEncoding.EncodeToString(endpoint.PublicKey))
 
 	ciphertext, err := encrypt(endpoint, []byte(msg), endpoint.ServerKey)
 	if err != nil {
 		exit(1, fmt.Errorf("unable to generate signature: %w", err))
 	}
 
-	// entire signature is json encoded to avoid issues with little bobby tables' peer ID.
+	// entire signature is json encoded to avoid issues with little bobby table's peer ID.
 	signature := &Signature{
-		Peer: endpoint.UserID,
+		Peer: endpoint.PeerID,
 		Sig:  ciphertext,
 	}
 
@@ -110,6 +162,11 @@ func cmdLs(endpoint *Endpoint, args []string) error {
 
 	body, _ := io.ReadAll(resp.Body)
 
+	if resp.StatusCode == http.StatusNoContent {
+		fmt.Println("No messages")
+		return nil
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("inbox failed: %s %s", resp.Status, body)
 	}
@@ -174,6 +231,15 @@ func cmdGet(endpoint *Endpoint, args []string) error {
 		return err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("message %s not found", args[0])
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unable to get message: %s %s", resp.Status, body)
+	}
 
 	body, _ := io.ReadAll(resp.Body)
 

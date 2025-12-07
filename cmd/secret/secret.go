@@ -3,20 +3,20 @@ package main
 //
 // This library contains all the code necessary to parse a user's
 // secret configuration (in ~/.config/secret) and extract the
-// double-encrypted credentials from that file.
-//
-// Note all the secret management code is in this package; we might need
-// to move additional code into it from cli/cmd/secret/secret.go over time.
+// credentials from that file.
 //
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
-	"regexp"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/nacl/box"
@@ -24,36 +24,36 @@ import (
 
 var DefaultSecretLocation = os.Getenv("SECRETS_DIR")
 
-// Peer contains information about other users, which might later include
-// their email address, discord, etc.
+// Peer contains information about other users.
 type Peer struct {
-	Version   int
-	PeerID    string `json:"peer"`
+	PeerID    string `json:"peerID"`
 	PublicKey []byte `json:"publicKey"`
 }
 
-// The current default version of the configuration file.
+// ConfigVersion is current default version of the configuration file.
 const ConfigVersion = 1
 
-// Configuration represents a Secret configuration file.
-type Configuration struct {
-	Version    int                  `json:"version"`    // Config file version
-	UserID     string               `json:"id"`         // User's email address
-	PrivateKey []byte               `json:"privateKey"` // Private key, encrypted with user's password
-	PublicKey  []byte               `json:"publicKey"`  // Public key for the private key
-	Peers      map[string]Peer      `json:"peers"`      // Contains info about other users
-	Store      string               `json:"-"`          // Location of secrets store
-	Stored     bool                 `json:"-"`          // Indicates if the config came from disk (not in JSON)
-	Files      map[string]*Metadata `json:"files"`      // List of files in the file store
+// Client represents the client configuration file.
+type Client struct {
+	Version       int         `json:"version"`       // Config file version
+	DefaultPeerID string      `json:"defaultPeerID"` // Default peer ID
+	Store         string      `json:"-"`             // Location of secrets store
+	Stored        bool        `json:"-"`             // Indicates if the config came from disk (not in JSON)
+	Servers       []*Endpoint `json:"servers"`       // 0th server is the default server
 }
 
-// Metadata contains metadata about an encrypted file. We don't
-// store any metadata at the moment, so this will result in a JSON map
-// of names to empty objects, which may help us in the future.
-type Metadata struct {
+// Endpoint represents a single server as seen from a Client.
+// Most of the configuration is specific to the selected server.
+type Endpoint struct {
+	URL        string           `json:"url"`        // Endpoint URL
+	PeerID     string           `json:"peerID"`     // Actual PeerID for this user
+	ServerKey  []byte           `json:"serverKey"`  // Public key of this server
+	PrivateKey []byte           `json:"privateKey"` // Private key, encrypted with user's password
+	PublicKey  []byte           `json:"publicKey"`  // Public key for the private key
+	Peers      map[string]*Peer `json:"peers"`      // Contains info about other users
 }
 
-// Convert the given slice to a 32 byte array.
+// To32 converts a slice to a 32 byte array for use with nacl.
 func To32(bytes []byte) *[32]byte {
 	var result [32]byte
 	if copy(result[:], bytes) != 32 {
@@ -65,19 +65,19 @@ func To32(bytes []byte) *[32]byte {
 
 // LoadSecretConfiguration loads the secret configuration, if there is one.
 // Returns an empty object (with Stored == false) if no configuration exists.
-func LoadSecretConfiguration(store string) (*Configuration, error) {
+func LoadSecretConfiguration(store string) (*Client, error) {
 	secretFile := store + "/keys"
 	secretContents, err := os.ReadFile(secretFile)
 	if os.IsNotExist(err) {
 		// return an empty object.
-		return &Configuration{Version: ConfigVersion, Stored: false, Store: store, Files: make(map[string]*Metadata)}, nil
+		return &Client{Version: ConfigVersion, Stored: false, Store: store}, nil
 	}
 
 	if err != nil {
 		return nil, err
 	}
 
-	config := Configuration{Stored: true, Store: store}
+	config := Client{Stored: true, Store: store}
 	err = json.Unmarshal(secretContents, &config)
 	if err != nil {
 		return nil, err
@@ -92,7 +92,7 @@ func LoadSecretConfiguration(store string) (*Configuration, error) {
 
 // Save a secret configuration. This is saved to the location from which it
 // was loaded.
-func (config *Configuration) Save() error {
+func (config *Client) Save() error {
 	secretFile := config.Store + "/keys"
 	contents, err := json.MarshalIndent(config, "", "  ")
 	if err != nil {
@@ -126,22 +126,8 @@ func GetSecretStore() (string, error) {
 	return secretDirectory, nil
 }
 
-// GetPeer returns the public key for a given peer (if known).
-func (config *Configuration) GetPeer(peer string) (*Peer, error) {
-	if config.Peers == nil {
-		return nil, fmt.Errorf("Please use `secret add` to add your peer %s. See `secret help` for more details.", peer)
-	}
-
-	entry, ok := config.Peers[peer]
-	if !ok {
-		return nil, fmt.Errorf("Please use `secret add` to add %s to your directory. See `secret help` for more details.", peer)
-	}
-
-	return &entry, nil
-}
-
 // GetFileStore returns the path to the named file.
-func (config *Configuration) GetFileStore(filename string) (string, error) {
+func (config *Client) GetFileStore(filename string) (string, error) {
 	uuname := uuid.NewSHA1(uuid.MustParse("F41E83C3-B3EE-4194-8B0F-5D1932041A86"), []byte(filename)).String()
 
 	// Create the directory if we need to.
@@ -159,81 +145,56 @@ func (config *Configuration) GetFileStore(filename string) (string, error) {
 	return secretStore + "/" + uuname, nil
 }
 
-// GetFile returns the decrypted version of the named file.
-func (config *Configuration) GetFile(filename string) ([]byte, error) {
-	loadPath, err := config.GetFileStore(filename)
+// Enrol with the given server. Enrolling means the server knows about
+// me, and I know the server's public key.
+func (endpoint *Endpoint) enrol() error {
+	u, err := url.Parse(endpoint.URL)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("invalid server URL: %w", err)
 	}
+	u.Path = path.Join(u.Path, "enrol", url.PathEscape(endpoint.PeerID))
 
-	// Don't reveal the location of the file; smother the error with
-	// something generic.
-	loadedFile, err := os.Open(loadPath)
+	// Post my public key
+	resp, err := http.Post(u.String(), "application/octet-stream", bytes.NewReader(endpoint.PublicKey))
 	if err != nil {
-		return nil, fmt.Errorf("unable to find secret %s", filename)
+		return fmt.Errorf("unable to enrol: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status from server: %s", resp.Status)
 	}
 
-	defer loadedFile.Close()
-	ciphertext, err := io.ReadAll(loadedFile)
+	serverKey, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("unable to read server key: %w", err)
 	}
 
-	plaintext, ok := box.OpenAnonymous(nil, ciphertext, To32(config.PublicKey), To32(config.PrivateKey))
-	if !ok {
-		return nil, fmt.Errorf("unable to decrypt stored object. has your private key changed?")
-	}
-
-	return plaintext, nil
+	endpoint.ServerKey = serverKey
+	return nil
 }
 
-func (config *Configuration) SaveFile(saveName string, plaintext []byte) error {
-	matched, err := regexp.Match("^[a-zA-Z0-9@$_.:-]+$", []byte(saveName))
-	if err != nil {
-		return err
-	}
+// AddServer adds a new server to the config, and generates a new keypair for that server.
+func (config *Client) AddServer(serverURL string) error {
 
-	if !matched {
-		return fmt.Errorf("invalid name %s: stored files must have simple names matching [a-zA-Z0-9]*", saveName)
-	}
-
-	ciphertext, err := box.SealAnonymous(nil, plaintext, To32(config.PublicKey), rand.Reader)
-	if err != nil {
-		return fmt.Errorf("unable to encrypt file: %w", err)
-	}
-
-	savePath, err := config.GetFileStore(saveName)
-	if err != nil {
-		return fmt.Errorf("unable to store file: %w", err)
-	}
-
-	saveFile, err := os.OpenFile(savePath, os.O_RDWR|os.O_CREATE, 0600)
-	if err != nil {
-		return fmt.Errorf("unable to save file: %w", err)
-	}
-
-	_, err = saveFile.Write(ciphertext)
-	if err != nil {
-		return fmt.Errorf("unable to write file: %w", err)
-	}
-
-	err = saveFile.Close()
-	if err != nil {
-		return fmt.Errorf("unable to close file: %w", err)
-	}
-
-	// Create a metadata entry for the file
-	config.Files[saveName] = &Metadata{}
-	return config.Save()
-}
-
-func (config *Configuration) InitKeys() error {
 	public, private, err := box.GenerateKey(rand.Reader)
 	if err != nil {
 		return err
 	}
 
-	config.PrivateKey = private[:]
-	config.PublicKey = public[:]
+	server := &Endpoint{
+		URL:        serverURL,
+		PeerID:     config.DefaultPeerID,
+		PrivateKey: private[:],
+		PublicKey:  public[:],
+		Peers:      make(map[string]*Peer),
+	}
+
+	err = server.enrol()
+	if err != nil {
+		return fmt.Errorf("unable to fetch key from server %s: %w", serverURL, err)
+	}
+
+	config.Servers = append(config.Servers, server)
 	return nil
 }

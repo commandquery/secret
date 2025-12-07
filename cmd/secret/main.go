@@ -3,12 +3,10 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
+	"flag"
 	"fmt"
 	"io"
-	"math"
 	"os"
-	"strings"
 
 	"golang.org/x/crypto/nacl/box"
 )
@@ -49,146 +47,44 @@ File Commands:
 }
 
 func exit(code int, err error) {
-	fmt.Fprintln(os.Stderr, err)
+	_, _ = fmt.Fprintln(os.Stderr, err)
 	os.Exit(code)
 }
 
-func getSecretFile(config *Configuration) (string, error) {
+func getSecretFile(config *Client) (string, error) {
 	return config.Store + "/keys", nil
 }
 
-// Convert the obejct to JSON but display as a base64 string.
-// This makes the object much easier to copy and paste, and also makes
-// it a bit more mysterious...
-func format(prefix string, bytes []byte) error {
-	b64 := []byte(base64.StdEncoding.EncodeToString(bytes))
+func cmdInit(config *Client, args []string) error {
 
-	// Try to make the output object square, but no more than 80
-	// columns.
-	width := int(math.Sqrt(float64(len(b64)))) * 2
-	if width > 80 {
-		width = 80
-	}
-
-	// Leave space around the box to make it easy to copy
-	output := []byte(prefix)
-
-	for index, value := range b64 {
-		if index%width == 0 {
-			output = append(output, '\n')
-			output = append(output, []byte(prefix)...)
-		}
-		output = append(output, value)
-	}
-
-	output = append(output, '\n')
-
-	_, err := os.Stdout.Write(output)
-	return err
-}
-
-// Take a string created by the format() function and turn it back into JSON.
-// Trims any whitespace that might have been added. Removes leading "// " and
-// any sequence of "\n// " so that comments from code can be pasted as well.
-func unformat(b64 []byte) ([]byte, error) {
-	s64 := string(b64)
-
-	// Strip off commented-out code.
-	if len(s64) >= 3 && s64[:3] == "// " {
-		s64 = s64[3:]
-	}
-
-	s64 = strings.ReplaceAll(s64, "\n// ", "")
-	s64 = strings.ReplaceAll(s64, " ", "")
-	s64 = strings.TrimSpace(s64)
-
-	return base64.StdEncoding.DecodeString(s64)
-}
-
-func getPublicKey(config *Configuration, prefix string) (string, error) {
-	entry := Peer{Version: 0, PeerID: config.UserID, PublicKey: config.PublicKey}
-
-	bytes, err := json.Marshal(entry)
-	if err != nil {
-		return "", err
-	}
-
-	b64 := base64.StdEncoding.EncodeToString(bytes)
-
-	return b64, nil
-}
-
-func cmdInit(config *Configuration, args []string) error {
-
-	if len(args) < 1 || len(args) > 2 {
-		usage()
+	flags := flag.NewFlagSet("init", flag.ContinueOnError)
+	force := flags.Bool("force", false, "force overwrite")
+	if err := flags.Parse(args); err != nil {
+		usage("secret init [--force] user@domain https://server/")
 	}
 
 	// If only one arg and the config came from disk, don't overwrite it.
-	if config.Stored && len(args) == 1 {
-		exit(1, fmt.Errorf("A secret already exists. Use --force to overwrite it."))
+	if config.Stored && !*force {
+		exit(1, fmt.Errorf("a secret configuration already exists; use --force to overwrite it"))
 	}
 
-	// If there are two args, the first one must be --force
-	if len(args) == 2 && args[0] != "--force" {
-		usage()
+	args = flags.Args()
+	if len(args) != 2 {
+		usage("secret init [--force] user@domain https://server/")
 	}
 
-	if err := config.InitKeys(); err != nil {
+	config.DefaultPeerID = args[0]
+	if err := config.AddServer(args[1]); err != nil {
 		exit(1, fmt.Errorf("unable to initialise keys: %w", err))
 	}
-	config.UserID = args[len(args)-1]
 
 	return config.Save()
 }
 
-func cmdKey(config *Configuration, args []string) error {
-
-	decorate := true
-
-	if len(args) > 0 && args[0] == "-n" {
-		decorate = false
-	}
-
-	b64, err := getPublicKey(config, "  ")
-
-	if decorate {
-		fmt.Printf("secret add %s %s\n", config.UserID, b64)
-	} else {
-		fmt.Println(b64)
-	}
-
-	return err
-}
-
-func cmdAdd(config *Configuration, args []string) error {
-	if len(args) != 2 {
-		usage("add <peer> <token>")
-	}
-
-	peerId := strings.ToLower(args[0])
-
-	bytes, err := unformat([]byte(args[1]))
-	if err != nil {
-		return err
-	}
-
-	var entry Peer
-	err = json.Unmarshal(bytes, &entry)
-	if err != nil {
-		return err
-	}
-
-	if strings.ToLower(entry.PeerID) != peerId {
-		exit(2, fmt.Errorf("The public key belongs to %s, not %s", entry.PeerID, peerId))
-	}
-
-	if config.Peers == nil {
-		config.Peers = make(map[string]Peer)
-	}
-
-	config.Peers[peerId] = entry
-	return config.Save()
+func cmdKey(server *Endpoint, args []string) error {
+	b64 := base64.StdEncoding.EncodeToString(server.PublicKey)
+	fmt.Println(b64)
+	return nil
 }
 
 // readInput reads a byte slice from a file or stdin.
@@ -215,12 +111,7 @@ func readInput(args []string, arg int) ([]byte, error) {
 	return io.ReadAll(reader)
 }
 
-func encrypt(config *Configuration, plaintext []byte, peerID string) ([]byte, error) {
-	peer, err := config.GetPeer(peerID)
-	if err != nil {
-		return nil, err
-	}
-
+func encrypt(endpoint *Endpoint, plaintext []byte, peerKey []byte) ([]byte, error) {
 	// You must use a different nonce for each message you encrypt with the
 	// same key. Since the nonce here is 192 bits long, a random value
 	// provides a sufficiently small probability of repeats.
@@ -230,7 +121,6 @@ func encrypt(config *Configuration, plaintext []byte, peerID string) ([]byte, er
 	}
 
 	// Prefix the message with a version number of the ciphertext message.
-	// This is so we can fail if we receive a different version.
 	// Current version is zero.
 	var ciphertext = []byte{0}
 
@@ -238,46 +128,16 @@ func encrypt(config *Configuration, plaintext []byte, peerID string) ([]byte, er
 	ciphertext = append(ciphertext, nonce[:]...)
 
 	// Encrypt the message itself and append to the nonce + public key
-	return box.Seal(ciphertext, plaintext, &nonce, To32(peer.PublicKey), To32(config.PrivateKey)), nil
+	return box.Seal(ciphertext, plaintext, &nonce, To32(peerKey), To32(endpoint.PrivateKey)), nil
 }
 
-// Send stdin to stdout after being encrypted with the given public key.
-// arg[0] = receipient
-// arg[1] = filename (optional)
-func cmdSend(config *Configuration, args []string) error {
-	if len(args) < 1 {
-		usage()
-	}
-
-	plaintext, err := readInput(args, 1)
-	if err != nil {
-		return err
-	}
-
-	ciphertext, err := encrypt(config, plaintext, args[0])
-	if err != nil {
-		return err
-	}
-
-	return format("  ", ciphertext)
-}
-
-func decrypt64(config *Configuration, peerID string, text64 []byte) ([]byte, error) {
-	ciphertext, err := unformat(text64)
-	if err != nil {
-		return nil, err
-	}
-
-	return decrypt(config, peerID, ciphertext)
-}
-
-func decrypt(config *Configuration, peerID string, ciphertext []byte) ([]byte, error) {
+func decrypt(server *Endpoint, peerID string, ciphertext []byte) ([]byte, error) {
 	// Check that the version number works with us.
 	if ciphertext[0] != 0 {
 		return nil, fmt.Errorf("ciphertext version (%d) is not supported. Try upgrading `secret`.", ciphertext[0])
 	}
 
-	peer, err := config.GetPeer(peerID)
+	peer, err := server.GetPeer(peerID)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +146,7 @@ func decrypt(config *Configuration, peerID string, ciphertext []byte) ([]byte, e
 	copy(nonce[:], ciphertext[1:25])
 
 	var out []byte
-	out, ok := box.Open(out, ciphertext[25:], &nonce, To32(peer.PublicKey), To32(config.PrivateKey))
+	out, ok := box.Open(out, ciphertext[25:], &nonce, To32(peer.PublicKey), To32(server.PrivateKey))
 
 	if !ok {
 		return nil, fmt.Errorf("unable to authenticate message from %s", peerID)
@@ -295,115 +155,14 @@ func decrypt(config *Configuration, peerID string, ciphertext []byte) ([]byte, e
 	return out, nil
 }
 
-func cmdDecrypt(config *Configuration, args []string) error {
-	if len(args) < 1 || len(args) > 3 {
-		usage()
-	}
-
-	ciphertext, err := readInput(args, 1)
+// Generate a key pair. This is mostly for seting up a server
+func cmdGenKey() {
+	pub, priv, err := box.GenerateKey(rand.Reader)
 	if err != nil {
-		return err
+		panic(err)
 	}
-
-	ciphertext, err = unformat(ciphertext)
-	if err != nil {
-		return err
-	}
-
-	plaintext, err := decrypt(config, args[0], ciphertext)
-
-	if err != nil {
-		return err
-	}
-
-	_, err = os.Stdout.Write(plaintext)
-	return err
-}
-
-// secret save <peerID> <name> [file]
-//
-// Saves the secret in ~/.config/secret/files.
-// This can be used by clients (eg, klog) to read the secret.
-func cmdSave(config *Configuration, args []string) error {
-	if len(args) < 2 {
-		usage()
-	}
-
-	text64, err := readInput(args, 2)
-	if err != nil {
-		return err
-	}
-
-	// In order to be able to decrypt the file later without having the sender's
-	// public key, we need to re-encrypt it anonymously.
-	plaintext, err := decrypt64(config, args[0], text64)
-	if err != nil {
-		return err
-	}
-
-	return config.SaveFile(args[1], plaintext)
-}
-
-// secret get <name>
-// Accesses a secret that's been stored in the files section. It's encrypted
-// using the user's private key.
-func cmdCat(config *Configuration, args []string) error {
-	if len(args) != 1 {
-		usage()
-	}
-
-	plaintext, err := config.GetFile(args[0])
-	if err != nil {
-		return fmt.Errorf("unable to show secret %s", args[0])
-	}
-
-	_, err = os.Stdout.Write(plaintext)
-	return err
-}
-
-func cmdRm(config *Configuration, args []string) error {
-	if len(args) != 1 {
-		usage()
-	}
-
-	loadPath, err := config.GetFileStore(args[0])
-	if err != nil {
-		return err
-	}
-
-	err = os.Remove(loadPath)
-	if err != nil {
-		return fmt.Errorf("unable to remove secret %s: %w", args[0], err)
-	}
-
-	// Remove the file's metadata
-	delete(config.Files, args[0])
-	return config.Save()
-}
-
-func cmdLs(config *Configuration, args []string) error {
-	for name := range config.Files {
-		fmt.Println(name)
-	}
-	return nil
-}
-
-// Import an unencrypted file into Secret. This encrypts the file with your public key
-// before storing it. It's used to e.g. import a TLS certificate directly from a file.
-//
-// secret import secret-filename [from-filename]
-func cmdImport(config *Configuration, args []string) error {
-	if len(args) < 1 || len(args) > 2 {
-		usage()
-	}
-
-	// Load the file using the provided filename, or stdin.
-	plaintext, err := readInput(args, 1)
-	if err != nil {
-		return err
-	}
-
-	return config.SaveFile(args[0], plaintext)
+	fmt.Printf("Public:  %s\n", base64.StdEncoding.EncodeToString(pub[:]))
+	fmt.Printf("Private: %s\n", base64.StdEncoding.EncodeToString(priv[:]))
 }
 
 func main() {
@@ -412,6 +171,10 @@ func main() {
 	if len(args) == 1 {
 		// --help, or anything else.
 		usage()
+	}
+
+	if args[1] == "server" {
+		exit(0, cmdServer())
 	}
 
 	var store string
@@ -450,29 +213,36 @@ func main() {
 		os.Exit(1)
 	}
 
+	// we only support the default server for now.
+
 	switch command {
 	case "init":
 		err = cmdInit(config, args)
+
 	case "key":
-		err = cmdKey(config, args)
-	case "add":
-		err = cmdAdd(config, args)
+		server := config.Servers[0]
+		err = cmdKey(server, args)
+
 	case "send":
-		err = cmdSend(config, args)
-	case "save":
-		err = cmdSave(config, args)
-	case "cat":
-		err = cmdCat(config, args)
-	case "rm":
-		err = cmdRm(config, args)
+		server := config.Servers[0]
+		err = cmdSend(server, args)
+		config.Save() // TODO: should only happen if a peer was added. FIXME: no error check.
+
 	case "ls":
-		err = cmdLs(config, args)
-	case "decrypt":
-		err = cmdDecrypt(config, args)
-	case "import":
-		err = cmdImport(config, args)
+		server := config.Servers[0]
+		err = cmdLs(server, args)
+
+	case "get":
+		server := config.Servers[0]
+		err = cmdGet(server, args)
+		config.Save() // TODO: should only happen if a peer was added. FIXME: no error check.
+
+	case "genkey":
+		cmdGenKey()
+
 	case "help", "--help", "-h":
 		usage()
+
 	default:
 		usage()
 	}
