@@ -6,6 +6,7 @@ toolchain go1.24.2
 
 require (
 	github.com/google/uuid v1.6.0
+	github.com/kelseyhightower/envconfig v1.4.0
 	golang.org/x/crypto v0.45.0
 )
 

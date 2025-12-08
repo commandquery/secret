@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/rand"
+	_ "embed"
 	"encoding/base64"
 	"flag"
 	"fmt"
@@ -11,31 +12,13 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
+//go:embed README.md
+var readme string
+
 func usage(msg ...any) {
-	fmt.Fprintln(os.Stderr,
-		`Secret is a simple command for exchanging sensitive data over public networks
-such as email, Teams or Discord, and saving it to your home directory.
 
-General format:
-
-  secret [options] command ...
-
-Options:
-  -f <secretdir>               - store (and retrieve) configuration from this directory
-
-General Commands:
-  init [--force] <id>          - create (or replace) your public key and your ID.
-  key [-n]                     - show your public key, so you can send it to your peeps. -n don't include help text.
-  add <peerID> <token>         - add a public key <token> sent by a friend whose ID is <peerID>
-  send <peerID> [file]         - encrypt file or stdin for friend <peerID> and print it to stdout
-  decrypt <peerID> [file]      - decrypt stdin from <peerID> and print it to stdout
-
-File Commands:
-  save <peerID> <name> [file]  - save a file sent by <peerID>, using the given file name
-  import <name> [file]         - import the operating system file into your secrets, encrypting it as we go
-  cat <name>                   - print the decrypted contents of the previously saved file <name>
-  rm <name>                    - Delete the secret called <name>. Forever!
-  ls                           - List files that have been previously saved.`)
+	_, _ = os.Stderr.WriteString(readme)
+	fmt.Println()
 
 	if len(msg) > 0 {
 		fmt.Println()
@@ -55,7 +38,7 @@ func getSecretFile(config *Client) (string, error) {
 	return config.Store + "/keys", nil
 }
 
-func cmdInit(config *Client, args []string) error {
+func cmdEnrol(config *Client, args []string) error {
 
 	flags := flag.NewFlagSet("init", flag.ContinueOnError)
 	force := flags.Bool("force", false, "force overwrite")
@@ -166,6 +149,11 @@ func cmdGenKey() {
 }
 
 func main() {
+
+	if err := initConfig(); err != nil {
+		exit(1, err)
+	}
+
 	args := os.Args
 
 	if len(args) == 1 {
@@ -216,8 +204,8 @@ func main() {
 	// we only support the default server for now.
 
 	switch command {
-	case "init":
-		err = cmdInit(config, args)
+	case "enrol":
+		err = cmdEnrol(config, args)
 
 	case "key":
 		server := config.Servers[0]

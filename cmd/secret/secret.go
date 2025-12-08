@@ -161,8 +161,12 @@ func (endpoint *Endpoint) enrol() error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode == http.StatusAccepted {
+		fmt.Println("enrolment requested")
+	} else if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status from server: %s", resp.Status)
+	} else {
+		fmt.Println("enrolment completed")
 	}
 
 	serverKey, err := io.ReadAll(resp.Body)
@@ -182,7 +186,7 @@ func (config *Client) AddServer(serverURL string) error {
 		return err
 	}
 
-	server := &Endpoint{
+	endpoint := &Endpoint{
 		URL:        serverURL,
 		PeerID:     config.DefaultPeerID,
 		PrivateKey: private[:],
@@ -190,11 +194,11 @@ func (config *Client) AddServer(serverURL string) error {
 		Peers:      make(map[string]*Peer),
 	}
 
-	err = server.enrol()
+	err = endpoint.enrol()
 	if err != nil {
 		return fmt.Errorf("unable to fetch key from server %s: %w", serverURL, err)
 	}
 
-	config.Servers = append(config.Servers, server)
+	config.Servers = append(config.Servers, endpoint)
 	return nil
 }

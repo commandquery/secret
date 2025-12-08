@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -34,8 +35,8 @@ type SecretServer struct {
 	Path       string           `json:"-"` // where this config was loaded
 	PrivateKey []byte           `json:"privateKey"`
 	PublicKey  []byte           `json:"publicKey"`
-	Users      map[string]*User `json:"users"`
-	Skew       int64            `json:"skew"` // allowable time skew for authentication nonce, seconds.
+	Users      map[string]*User `json:"peers"` // TODO: the field should be renamed Peers, but needs to move to a new package first.
+	Skew       int64            `json:"skew"`  // allowable time skew for authentication nonce, seconds.
 }
 
 type Message struct {
@@ -79,14 +80,18 @@ func (user *User) ejectMessages() {
 	user.Messages = nil
 }
 
-// FIXME: TESTING ONLY - MUST GENERATE NEW KEYS!!!
-// Returns a server config for testing.
+// NewSecretServer returns a new SecretServer with a unique private and public key.
 func NewSecretServer(path string) *SecretServer {
+	pub, priv, err := box.GenerateKey(rand.Reader)
+	if err != nil {
+		panic(err)
+	}
+
 	server := &SecretServer{
 		Path:       path,
-		PrivateKey: MustDecode("62m1YMAMBmI44AF0yU/7uzUNr3cChzZ3RWGAxFGGLDY="),
-		PublicKey:  MustDecode("h7KZ/za0dmkkHutPKESV+C1svNk0ZYbCNfGgYuIA3lg="),
-		Skew:       30,
+		PrivateKey: priv[:],
+		PublicKey:  pub[:],
+		Skew:       5,
 		Users:      make(map[string]*User),
 	}
 
@@ -186,26 +191,59 @@ func (server *SecretServer) Authenticate(r *http.Request) (*User, error) {
 func cmdServer() error {
 	mux := http.NewServeMux()
 
-	server, err := Load("server.json")
+	server, err := Load(Config.ServerConfigPath)
 	if errors.Is(err, os.ErrNotExist) {
-		server = NewSecretServer("server.json")
+		server = NewSecretServer(Config.ServerConfigPath)
 		if err = server.Save(); err != nil {
 			exit(1, fmt.Errorf("failed to init server: %w", err))
 		}
 	}
 
-	mux.HandleFunc("POST /enrol/{peer}", server.handleEnrol)
-	mux.HandleFunc("POST /send/{recipient}", server.handleSend)
-	mux.HandleFunc("GET /inbox", server.handleInbox)
-	mux.HandleFunc("GET /publickey/{peer}", server.handlePublicKey)
-	mux.HandleFunc("GET /message/{id}", server.handleMessage)
+	mux.HandleFunc("POST "+Config.PathPrefix+"enrol/{peer}", server.handleEnrol)
+	mux.HandleFunc("POST "+Config.PathPrefix+"send/{recipient}", server.handleSend)
+	mux.HandleFunc("GET "+Config.PathPrefix+"inbox", server.handleInbox)
+	mux.HandleFunc("GET "+Config.PathPrefix+"publickey/{peer}", server.handlePublicKey)
+	mux.HandleFunc("GET "+Config.PathPrefix+"message/{id}", server.handleMessage)
 
 	log.Println("listening on :8080")
 	return http.ListenAndServe(":8080", mux)
 }
 
+func (server *SecretServer) enrolUser(peerID string, peerKey []byte) error {
+	// never override an existing user's public key.
+	existingUser, ok := server.GetUser(peerID)
+	if ok {
+		// user can re-enrol with their existing public key.
+		if bytes.Equal(existingUser.PublicKey, peerKey) {
+			return nil
+		}
+
+		// a new public key requires a reauthentication process which we don't have now.
+		return fmt.Errorf("cannot replace existing peer")
+	}
+
+	user := &User{
+		PeerID:    peerID,
+		PublicKey: peerKey,
+	}
+
+	server.Users[peerID] = user
+
+	if err := server.Save(); err != nil {
+		return fmt.Errorf("unable to enrol user: %w", err)
+	}
+
+	return nil
+}
+
 // Enrollment accepts a key from the client, and returns the server key.
 func (server *SecretServer) handleEnrol(w http.ResponseWriter, r *http.Request) {
+
+	if Config.AutoEnrol == "false" {
+		http.Error(w, "Enrolment disabled", http.StatusForbidden)
+		return
+	}
+
 	server.lock.Lock()
 	defer server.lock.Unlock()
 
@@ -219,35 +257,21 @@ func (server *SecretServer) handleEnrol(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	log.Println("received peer key", base64.StdEncoding.EncodeToString(peerKey))
-
-	// never override an existing user's public key.
-	existingUser, ok := server.GetUser(peerID)
-	if ok {
-		// user can re-enrol with their existing public key.
-		if bytes.Equal(existingUser.PublicKey, peerKey) {
-			_, _ = w.Write(server.PublicKey)
-			return
-		}
-
-		// a new public key requires a reauthentication process which we don't have now.
-		http.Error(w, "cannot replace existing peer", http.StatusForbidden)
+	if Config.AutoEnrol == "approve" {
+		log.Printf("approval requested for peer %s %s", peerID, base64.StdEncoding.EncodeToString(peerKey))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write(server.PublicKey)
 		return
 	}
 
-	user := &User{
-		PeerID:    peerID,
-		PublicKey: peerKey,
-	}
-
-	server.Users[peerID] = user
-
-	if err = server.Save(); err != nil {
-		http.Error(w, "unable to enrol user", http.StatusInternalServerError)
+	if err = server.enrolUser(peerID, peerKey); err != nil {
+		log.Println("unable to enrol user:", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Type", "application/octet-stream")
 	_, _ = w.Write(server.PublicKey)
 }
 
