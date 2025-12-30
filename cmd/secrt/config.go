@@ -20,7 +20,7 @@ var Config struct {
 }
 
 func initConfig() error {
-	if err := envconfig.Process("secret", &Config); err != nil {
+	if err := envconfig.Process("secrt", &Config); err != nil {
 		return err
 	}
 
@@ -36,6 +36,7 @@ func initConfig() error {
 }
 
 // GetStoreLocation returns the filename where the secret configuration will be stored.
+// If necessary, a store directory will be created.
 func GetStoreLocation() string {
 	storeLocation := Config.Store
 	if storeLocation != "" {
@@ -47,6 +48,11 @@ func GetStoreLocation() string {
 		panic(err)
 	}
 
-	storeLocation = filepath.Join(configDir, "secret", "store.json")
+	storeDir := filepath.Join(configDir, "secrt")
+	if err = os.MkdirAll(storeDir, 0700); err != nil {
+		panic(err)
+	}
+
+	storeLocation = filepath.Join(storeDir, "store.json")
 	return storeLocation
 }

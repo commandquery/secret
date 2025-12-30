@@ -15,7 +15,7 @@ import (
 
 func usage(msg ...any) {
 
-	_, _ = os.Stderr.WriteString(secret.README)
+	_, _ = os.Stderr.WriteString(secrt.README)
 	fmt.Println()
 
 	if len(msg) > 0 {
@@ -46,7 +46,7 @@ func cmdEnrol(config *client.Config, args []string) error {
 	}
 
 	if err := config.AddServer(args[0], args[1]); err != nil {
-		exit(1, fmt.Errorf("unable to initialise keys: %w", err))
+		exit(1, fmt.Errorf("unable to enrol user: %w", err))
 	}
 
 	return config.Save()
@@ -88,7 +88,7 @@ func main() {
 	var store string
 	var err error
 
-	flags := flag.NewFlagSet("secret", flag.ContinueOnError)
+	flags := flag.NewFlagSet("secrt", flag.ContinueOnError)
 	flags.StringVar(&store, "f", GetStoreLocation(), "path to store secret")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		exit(1, err)
@@ -111,7 +111,7 @@ func main() {
 	args = flags.Args()[1:]
 
 	if !config.Stored && command != "enrol" {
-		fmt.Fprintf(os.Stderr, "please share your public key before using `secret`:\n")
+		fmt.Fprintf(os.Stderr, "please enrol your public key before using `secret`:\n")
 		fmt.Fprintln(os.Stderr)
 		fmt.Fprintf(os.Stderr, "    secret enrol email@example.com\n")
 		os.Exit(1)
@@ -130,7 +130,7 @@ func main() {
 	case "send":
 		err = client.CmdShare(config, endpoint, args)
 		if err == nil {
-			config.Save() // TODO: should only happen if a peer was added. FIXME: no error check.
+			err = config.Save() // TODO: should only happen if a peer was added. FIXME: no error check.
 		}
 
 	case "ls":
@@ -139,16 +139,17 @@ func main() {
 	case "get":
 		err = client.CmdGet(config, endpoint, args)
 		if err == nil {
-			config.Save() // TODO: should only happen if a peer was added. FIXME: no error check.
+			err = config.Save() // TODO: should only happen if a peer was added. FIXME: no error check.
 		}
 
 	case "set":
 		if len(args) != 1 {
 			usage()
 		}
+
 		err = config.Set(args[0])
 		if err == nil {
-			config.Save()
+			err = config.Save()
 		}
 
 	case "genkey":

@@ -135,12 +135,15 @@ func (endpoint *Endpoint) enrol() error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusAccepted {
-		fmt.Println("enrolment requested")
-	} else if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("unexpected status from server: %s", resp.Status)
-	} else {
+	switch resp.StatusCode {
+	case http.StatusOK:
 		fmt.Println("enrolment completed")
+	case http.StatusAccepted:
+		fmt.Println("enrolment requested")
+	case http.StatusConflict:
+		return fmt.Errorf("user already enrolled")
+	default:
+		return fmt.Errorf("unexpected status from server: %s", resp.Status)
 	}
 
 	serverKey, err := io.ReadAll(resp.Body)
@@ -170,7 +173,7 @@ func (config *Config) AddServer(peerID, serverURL string) error {
 
 	err = endpoint.enrol()
 	if err != nil {
-		return fmt.Errorf("unable to fetch key from server %s: %w", serverURL, err)
+		return fmt.Errorf("unable to enrol user at %s: %w", serverURL, err)
 	}
 
 	config.Servers[serverURL] = endpoint

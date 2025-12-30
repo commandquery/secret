@@ -1,4 +1,4 @@
-package secret
+package secrt
 
 import "github.com/google/uuid"
 

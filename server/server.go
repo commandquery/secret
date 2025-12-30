@@ -31,6 +31,8 @@ const MessageInboxLimit = 10
 // MessageExpiry limits how long a message is stored.
 const MessageExpiry time.Duration = 24 * time.Hour
 
+var ErrExistingPeer error = errors.New("peer already exists")
+
 type SecretServer struct {
 	lock       sync.Mutex
 	Path       string           `json:"-"` // where this config was loaded
@@ -141,7 +143,7 @@ func (server *SecretServer) Authenticate(r *http.Request) (*Peer, error) {
 		return nil, fmt.Errorf("invalid signature encoding: %w", err)
 	}
 
-	var signature secret.Signature
+	var signature secrt.Signature
 	if err = json.Unmarshal(js, &signature); err != nil {
 		return nil, fmt.Errorf("invalid signature: %w", err)
 	}
@@ -162,7 +164,7 @@ func (server *SecretServer) Authenticate(r *http.Request) (*Peer, error) {
 	copy(nonce[:], ciphertext[1:25])
 
 	var out []byte
-	plaintext, ok := box.Open(out, ciphertext[25:], &nonce, secret.To32(peer.PublicKey), secret.To32(server.PrivateKey))
+	plaintext, ok := box.Open(out, ciphertext[25:], &nonce, secrt.To32(peer.PublicKey), secrt.To32(server.PrivateKey))
 	if !ok {
 		return nil, fmt.Errorf("unable to authenticate message from %s", peer.PeerID)
 	}
@@ -217,7 +219,7 @@ func (server *SecretServer) enrolUser(peerID string, peerKey []byte) error {
 		}
 
 		// a new public key requires a reauthentication process which we don't have now.
-		return fmt.Errorf("cannot replace existing peer")
+		return ErrExistingPeer
 	}
 
 	user := &Peer{
@@ -264,6 +266,12 @@ func (server *SecretServer) handleEnrol(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err = server.enrolUser(peerID, peerKey); err != nil {
+		if errors.Is(err, ErrExistingPeer) {
+			log.Printf("peer %s already enrolled", peerID)
+			http.Error(w, "peer already enrolled", http.StatusConflict)
+			return
+		}
+
 		log.Println("unable to enrol user:", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -317,7 +325,7 @@ func (server *SecretServer) handleShare(w http.ResponseWriter, r *http.Request) 
 
 	recipient.Messages = append(recipient.Messages, newMessage)
 
-	resp := secret.ShareResponse{
+	resp := secrt.ShareResponse{
 		ID: newMessage.ID,
 	}
 
@@ -342,12 +350,12 @@ func (server *SecretServer) handleInbox(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	inbox := &secret.Inbox{
-		Messages: make([]secret.InboxMessage, 0, len(peer.Messages)),
+	inbox := &secrt.Inbox{
+		Messages: make([]secrt.InboxMessage, 0, len(peer.Messages)),
 	}
 
 	for _, msg := range peer.Messages {
-		inbox.Messages = append(inbox.Messages, secret.InboxMessage{
+		inbox.Messages = append(inbox.Messages, secrt.InboxMessage{
 			ID:        msg.ID,
 			Sender:    msg.Sender.PeerID,
 			Timestamp: msg.Timestamp.Unix(),
@@ -368,11 +376,13 @@ func (server *SecretServer) handlePublicKey(w http.ResponseWriter, r *http.Reque
 	peerID := r.PathValue("peer")
 	if peerID == "" {
 		http.Error(w, "missing peer", http.StatusBadRequest)
+		return
 	}
 
 	user, ok := server.GetUser(peerID)
 	if !ok {
 		http.Error(w, "unknown peer", http.StatusNotFound)
+		return
 	}
 
 	w.Header().Add("Content-Type", "application/octet-stream")

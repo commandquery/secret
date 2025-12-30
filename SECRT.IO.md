@@ -1,8 +1,14 @@
 # secrt.io
 
-Secrt is a simple command-line utility that helps technical folk securely share secrets with their peers,
-coworkers, and devices using end-to-end encryption - specifically, public-key authenticated encryption using
-X25519-XSalsa20-Poly1305 (NaCl box)
+Secrt is a simple command-line utility that helps technical folk securely share secrets with peers,
+coworkers and devices using end-to-end encryption.
+
+Secrt uses X25519-XSalsa20-Poly1305 (NaCl box) public-key authenticated encryption via the
+Go package [golang.org/x/crypto/nacl/box](https://pkg.go.dev/golang.org/x/crypto/nacl/box).
+
+## Examples
+
+You can use secrt to send anything at all from the command line; for example:
 
 * tokens
 * passwords
@@ -58,19 +64,7 @@ The nice thing about using secrt on devices is that you don’t have to think ab
 going to put the secrets. Share the secret from your laptop, navigate to the right place in the device,
 then drop the secret into `$PWD`.
 
-## Security
-
-secrt uses NaCL E2E crypto to protect your data. Our servers are like a transit lounge for secrets. They
-make it easy to share secrets (ie, store and forward), but we have no way to read the data you share.
-
-By default, secrt sends cleartext metadata (filename and size) to make it easy for the client.
-You can disable this with:
-
-    secrt set metadata=none
-
-Metadata is sent in cleartext to ensure that filenames are not dangerous to the receiver.
-
-Limitations
+## Limitations
 
 Secrets are limited to 50KB (that’s a big key!)
 Secrets are permanently deleted after 24 hours

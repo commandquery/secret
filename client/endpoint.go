@@ -33,7 +33,10 @@ func confirm(prompt string) bool {
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
 	var b [1]byte
-	os.Stdin.Read(b[:])
+	if _, err = os.Stdin.Read(b[:]); err != nil {
+		return false
+	}
+
 	fmt.Println() // newline after keypress
 
 	return b[0] == 'y' || b[0] == 'Y'
@@ -49,7 +52,7 @@ func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) 
 	}
 
 	if !config.Properties.AcceptPeers {
-		return nil, fmt.Errorf("unknown peer %s", peerId)
+		return nil, fmt.Errorf("unknown peer %s; use 'secrt peer add %s' to use the server's public key for this peer", peerId)
 	}
 
 	u, err := url.Parse(endpoint.URL)
@@ -72,6 +75,10 @@ func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) 
 		return nil, fmt.Errorf("unable to contact server: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("peer %s not found", peerId)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -110,7 +117,7 @@ func (endpoint *Endpoint) SetSignature(req *http.Request) error {
 	}
 
 	// entire signature is json encoded to avoid issues with little bobby table's peer ID.
-	signature := &secret.Signature{
+	signature := &secrt.Signature{
 		Peer: endpoint.PeerID,
 		Sig:  ciphertext,
 	}
@@ -176,7 +183,7 @@ func CmdShare(config *Config, endpoint *Endpoint, args []string) error {
 		return fmt.Errorf("share failed: %s: %s", resp.Status, body)
 	}
 
-	var shareResponse secret.ShareResponse
+	var shareResponse secrt.ShareResponse
 	if err = json.NewDecoder(resp.Body).Decode(&shareResponse); err != nil {
 		return fmt.Errorf("unable to decode share response: %w", err)
 	}
@@ -225,7 +232,7 @@ func CmdLs(endpoint *Endpoint, args []string) error {
 		return fmt.Errorf("inbox failed: %s %s", resp.Status, body)
 	}
 
-	var inbox secret.Inbox
+	var inbox secrt.Inbox
 	err = json.Unmarshal(body, &inbox)
 	if err != nil {
 		return fmt.Errorf("unable to parse inbox: %w", err)
@@ -247,7 +254,7 @@ func CmdLs(endpoint *Endpoint, args []string) error {
 	return nil
 }
 
-func printShortInbox(inbox secret.Inbox) {
+func printShortInbox(inbox secrt.Inbox) {
 	fmt.Printf("%-8s  %10s  %-19s  %-s\n", "ID", "Size", "Sent", "Sender")
 
 	for _, msg := range inbox.Messages {
@@ -256,7 +263,7 @@ func printShortInbox(inbox secret.Inbox) {
 	}
 }
 
-func printLongInbox(inbox secret.Inbox) {
+func printLongInbox(inbox secrt.Inbox) {
 	fmt.Printf("%-36s  %10s  %-19s  %-s\n", "ID", "Size", "Sent", "Sender")
 
 	for _, msg := range inbox.Messages {
@@ -343,7 +350,7 @@ func readInput(args []string, arg int) ([]byte, error) {
 func (endpoint *Endpoint) Encrypt(plaintext []byte, peerKey []byte) ([]byte, error) {
 	// You must use a different nonce for each message you encrypt with the
 	// same key. Since the nonce here is 192 bits long, a random value
-	// provides a sufficiently small probability of repeats.
+	// provides a sufficiently small probability of collisions.
 	var nonce [24]byte
 	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
 		return nil, fmt.Errorf("unable to generate nonce: %w", err)
@@ -357,7 +364,7 @@ func (endpoint *Endpoint) Encrypt(plaintext []byte, peerKey []byte) ([]byte, err
 	ciphertext = append(ciphertext, nonce[:]...)
 
 	// Encrypt the message itself and append to the nonce + public key
-	return box.Seal(ciphertext, plaintext, &nonce, secret.To32(peerKey), secret.To32(endpoint.PrivateKey)), nil
+	return box.Seal(ciphertext, plaintext, &nonce, secrt.To32(peerKey), secrt.To32(endpoint.PrivateKey)), nil
 }
 
 func (endpoint *Endpoint) Decrypt(config *Config, peerID string, ciphertext []byte) ([]byte, error) {
@@ -375,7 +382,7 @@ func (endpoint *Endpoint) Decrypt(config *Config, peerID string, ciphertext []by
 	copy(nonce[:], ciphertext[1:25])
 
 	var out []byte
-	out, ok := box.Open(out, ciphertext[25:], &nonce, secret.To32(peer.PublicKey), secret.To32(endpoint.PrivateKey))
+	out, ok := box.Open(out, ciphertext[25:], &nonce, secrt.To32(peer.PublicKey), secrt.To32(endpoint.PrivateKey))
 
 	if !ok {
 		return nil, fmt.Errorf("unable to authenticate message from %s", peerID)
