@@ -32,12 +32,12 @@ jobs:
         run: |
           ext=""
           [[ "$GOOS" == "windows" ]] && ext=".exe"
-          go build -o secret_${GOOS}_${GOARCH}${ext} ./cmd/secret
+          go build -o secrt_${GOOS}_${GOARCH}${ext} ./cmd/secrt
 
       - uses: actions/upload-artifact@v4
         with:
-          name: secret_${{ matrix.goos }}_${{ matrix.goarch }}
-          path: secret_*
+          name: secrt_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: secrt_*
 
   release:
     needs: build
@@ -56,4 +56,4 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
-          files: secret_*
+          files: secrt_*
