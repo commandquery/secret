@@ -1,21 +1,7 @@
 # not-so-secret TODO
 
-- [X] "-f conf" should point directly to a file, not a dir. (alice.secrt, bob.secrt)
-- [X] I think a missing peer on the server causes a null pointer panic
-- [ ] rename "secret" to "secrt"
 - [ ] change emersion secret deployment to use "secrt" instead
-- [ ] when a file is sent, also send a filename and size
-  - [ ] metadata is not encrypted, optional
-- [ ] optionally send a subject
-- [ ] `secrt rm` to remove a secret
-- [ ] `secret get --rm` to remove after get
-- [ ] `secrt get -o filename` to specify where to save a file
-- [ ] `secrt peer add user@example` explicitly add a peer
-  - [ ] `secrt peer rm user@example` remove peer
-  - [ ] `secrt peer ls` list peers
 - [ ] protect the private key on the client (eg with a passphrase)
-- [ ] when sending, search all servers for a peer rather than using the default server
-  - [ ] if the same peer is on two servers, select the first, print a warning & ask to continue
 - [ ] support for multiple servers (eg, -s server)
 - [ ] server-side struct mutations aren't generally protected by a mutex.
 - [ ] saving client or server config should be atomic
@@ -23,15 +9,13 @@
 
 ## Commercial & Public Stuff
 
-- [ ] a library version that can be used in your own code to generate and send secrets would be great
 - [ ] postgres backend
 - [ ] invite mechanism. - invite specific users, invite an entire domain
 - [ ] email invite verification
 - [ ] some kind of usage limits / AUP / rate limiting - a byte limit would satisfy my problem with nasty material
 - [ ] make available in homebrew
 - [ ] web site
-- [ ] share with mark.dorset@... (SECRET_AUTO_ENROL="invite"), richard@, noel@, ...
-- [ ] ability to "pin" a secret - extra cost / 'pro' option - allows distribution of secrets for users
+- [ ] share with mark.dorset@... (SECRET_AUTO_ENROL="invite"), richard@, noel@, ... what about the pgpkg guy?
 
 ## Done
 
@@ -62,3 +46,20 @@
 - [X] `secrt set [property]=[value]` and especially `secrt set metadata=none`
 - [X] `secrt set server=https://...` set default server
 - [X] `secrt set acceptNewPeers=false` stop adding peers automatically
+- [X] "-f conf" should point directly to a file, not a dir. (alice.secrt, bob.secrt)
+- [X] I think a missing peer on the server causes a null pointer panic
+- [X] rename "secret" to "secrt"
+- [X] when a file is sent, also send a filename and size
+    - [X] encrypt metadata, but store it separately.
+    - [X] send encrypted metadata in "secrt ls"
+    - [X] optionally send a description/subject
+    - [X] "secrt ls -l" should show long uuid
+    - [X] create a "ls" test with acceptNewPeers=false
+- [X] client-side soft limit to size of payload and metadata in envelope
+- [X] server-side hard limit to size of payload and metadata in envelope
+- [X] `secrt rm` to remove a secret
+- [X] `secrt get -o filename` to specify where to save a file
+- [X] `secrt peer ls` list peers
+- [X] `secrt peer rm user@example` remove peer
+- [X] `secrt peer add user@example` explicitly add a peer
+- [X] GET /peer/{peer} should return JSON rather than just the public key (eg, screen name)

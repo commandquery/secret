@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,7 +21,7 @@ import (
 )
 
 // MessageSizeLimit limits the size of individual messages.
-const MessageSizeLimit = 10 * 1024 * 1024
+const MessageSizeLimit = 50 * 1024 // 100 KiB
 
 // MessageInboxLimit limits the number of messages per user
 // If exceeded, the oldest message is silently deleted.
@@ -32,6 +31,8 @@ const MessageInboxLimit = 10
 const MessageExpiry time.Duration = 24 * time.Hour
 
 var ErrExistingPeer error = errors.New("peer already exists")
+var ErrAmbiguousMessageID error = errors.New("ambiguous message ID")
+var ErrUnknownMessageID error = errors.New("unknown message ID")
 
 type SecretServer struct {
 	lock       sync.Mutex
@@ -47,32 +48,8 @@ type Message struct {
 	ID        uuid.UUID
 	Sender    *Peer
 	Timestamp time.Time
-	Data      []byte
-}
-
-// Peer is a peer who's enrolled in this server instance.
-type Peer struct {
-	lock      sync.Mutex
-	PeerID    string     `json:"peerID"`
-	PublicKey []byte     `json:"publicKey"`
-	Messages  []*Message `json:"-"` // messages are transient, at least for now.
-}
-
-// ejectMessages ejects old messages. Peer MUST be locked before calling ejectMessages.
-func (user *Peer) ejectMessages() {
-	cutoff := time.Now().Add(-MessageExpiry)
-	for index, message := range user.Messages {
-		if message.Timestamp.After(cutoff) {
-			// messages are stored in order.
-			if index > 0 {
-				user.Messages = user.Messages[index:]
-			}
-			return
-		}
-	}
-
-	// All messages expired (or slice was empty)
-	user.Messages = nil
+	Metadata  []byte
+	Payload   []byte
 }
 
 // NewSecretServer returns a new SecretServer with a unique private and public key.
@@ -184,31 +161,6 @@ func (server *SecretServer) Authenticate(r *http.Request) (*Peer, error) {
 	return peer, nil
 }
 
-func StartServer(configPath, pathPrefix, autoEnrol string) error {
-	mux := http.NewServeMux()
-
-	server, err := Load(configPath)
-	if errors.Is(err, os.ErrNotExist) {
-		server = NewSecretServer(configPath, autoEnrol)
-		if err = server.Save(); err != nil {
-			return fmt.Errorf("failed to init server: %w", err)
-		}
-	} else {
-		if err != nil {
-			return err
-		}
-	}
-
-	mux.HandleFunc("POST "+pathPrefix+"enrol/{peer}", server.handleEnrol)
-	mux.HandleFunc("POST "+pathPrefix+"share/{recipient}", server.handleShare)
-	mux.HandleFunc("GET "+pathPrefix+"inbox", server.handleInbox)
-	mux.HandleFunc("GET "+pathPrefix+"publickey/{peer}", server.handlePublicKey)
-	mux.HandleFunc("GET "+pathPrefix+"message/{id}", server.handleMessage)
-
-	log.Println("listening on :8080")
-	return http.ListenAndServe(":8080", mux)
-}
-
 func (server *SecretServer) enrolUser(peerID string, peerKey []byte) error {
 	// never override an existing user's public key.
 	existingUser, ok := server.GetUser(peerID)
@@ -281,7 +233,7 @@ func (server *SecretServer) handleEnrol(w http.ResponseWriter, r *http.Request) 
 	_, _ = w.Write(server.PublicKey)
 }
 
-func (server *SecretServer) handleShare(w http.ResponseWriter, r *http.Request) {
+func (server *SecretServer) handlePostMessage(w http.ResponseWriter, r *http.Request) {
 	sender, err := server.Authenticate(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -300,9 +252,19 @@ func (server *SecretServer) handleShare(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Messages are sent in an Envelope that contains separately encrypted
+	// Metadata and Payload objects.
 	r.Body = http.MaxBytesReader(w, r.Body, MessageSizeLimit)
-	messageBytes, err := io.ReadAll(r.Body)
+	envelopeJS, err := io.ReadAll(r.Body)
 	if err != nil {
+		log.Println("unable to read body:", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var envelope secrt.Envelope
+	if err = json.Unmarshal(envelopeJS, &envelope); err != nil {
+		log.Println("unable to parse envelope:", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -311,30 +273,22 @@ func (server *SecretServer) handleShare(w http.ResponseWriter, r *http.Request) 
 		ID:        uuid.New(),
 		Sender:    sender,
 		Timestamp: time.Now(),
-		Data:      messageBytes,
+		Metadata:  envelope.Metadata,
+		Payload:   envelope.Payload,
 	}
 
-	recipient.lock.Lock()
-	defer recipient.lock.Unlock()
-
-	recipient.ejectMessages()
-
-	if len(recipient.Messages) == MessageInboxLimit {
-		recipient.Messages = recipient.Messages[1:]
-	}
-
-	recipient.Messages = append(recipient.Messages, newMessage)
-
-	resp := secrt.ShareResponse{
+	recipient.AddMessage(newMessage)
+	log.Println("sent message", newMessage.ID)
+	// Tell the sender the message ID
+	resp := secrt.SendResponse{
 		ID: newMessage.ID,
 	}
 
-	log.Println("shared message", newMessage.ID)
-	// Tell the sender the message ID
 	_ = json.NewEncoder(w).Encode(resp)
+
 }
 
-func (server *SecretServer) handleInbox(w http.ResponseWriter, r *http.Request) {
+func (server *SecretServer) handleGetInbox(w http.ResponseWriter, r *http.Request) {
 	peer, err := server.Authenticate(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -359,7 +313,8 @@ func (server *SecretServer) handleInbox(w http.ResponseWriter, r *http.Request) 
 			ID:        msg.ID,
 			Sender:    msg.Sender.PeerID,
 			Timestamp: msg.Timestamp.Unix(),
-			Size:      len(msg.Data),
+			Size:      len(msg.Payload),
+			Metadata:  msg.Metadata,
 		})
 	}
 
@@ -367,7 +322,7 @@ func (server *SecretServer) handleInbox(w http.ResponseWriter, r *http.Request) 
 	_ = json.NewEncoder(w).Encode(inbox)
 }
 
-func (server *SecretServer) handlePublicKey(w http.ResponseWriter, r *http.Request) {
+func (server *SecretServer) handleGetPeer(w http.ResponseWriter, r *http.Request) {
 	if _, err := server.Authenticate(r); err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -385,11 +340,44 @@ func (server *SecretServer) handlePublicKey(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	w.Header().Add("Content-Type", "application/octet-stream")
-	_, _ = w.Write(user.PublicKey)
+	peer := secrt.Peer{
+		Peer:      peerID,
+		PublicKey: user.PublicKey,
+	}
+
+	peerjs, err := json.Marshal(peer)
+	if err != nil {
+		log.Println("unable to marshal peer:", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	_, _ = w.Write(peerjs)
 }
 
-func (server *SecretServer) handleMessage(w http.ResponseWriter, r *http.Request) {
+func WriteError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrUnknownMessageID):
+		http.Error(w, "unknown message id", http.StatusNotFound)
+		return
+	case errors.Is(err, ErrAmbiguousMessageID):
+		http.Error(w, "ambiguous message id", http.StatusConflict)
+		return
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+//func getMessageWithError(w http.ResponseWriter, peer *Peer, id string) (*Message, error) {
+//	selected, err := peer.getMessage(id)
+//	if err == nil {
+//		return selected, nil
+//	}
+//}
+
+func (server *SecretServer) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	peer, err := server.Authenticate(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -398,30 +386,70 @@ func (server *SecretServer) handleMessage(w http.ResponseWriter, r *http.Request
 
 	id := r.PathValue("id")
 	if len(id) != 8 && len(id) != 36 {
-		http.Error(w, "invalid message id", http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("invalid message id %s", id), http.StatusBadRequest)
 		return
 	}
 
-	id = strings.ToLower(id)
-	var selected *Message
-
-	for _, msg := range peer.Messages {
-		if strings.HasPrefix(msg.ID.String(), id) {
-			if selected != nil {
-				http.Error(w, "ambiguous message id", http.StatusConflict)
-				return
-			}
-
-			selected = msg
-		}
-	}
-
-	if selected == nil {
-		http.Error(w, "unknown message", http.StatusNotFound)
+	selected, err := peer.getMessage(id)
+	if err != nil {
+		WriteError(w, err)
 		return
 	}
 
 	w.Header().Add("Peer-ID", selected.Sender.PeerID)
 	w.Header().Add("Content-Type", "application/octet-stream")
-	_, _ = w.Write(selected.Data)
+	_, _ = w.Write(selected.Payload)
+}
+
+func (server *SecretServer) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
+	peer, err := server.Authenticate(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	id := r.PathValue("id")
+	if len(id) != 8 && len(id) != 36 {
+		http.Error(w, fmt.Sprintf("invalid message id %s", id), http.StatusBadRequest)
+		return
+	}
+
+	selected, err := peer.getMessage(id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+
+	peer.DeleteMessage(selected)
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func StartServer(configPath, pathPrefix, autoEnrol string) error {
+	mux := http.NewServeMux()
+
+	server, err := Load(configPath)
+	if errors.Is(err, os.ErrNotExist) {
+		server = NewSecretServer(configPath, autoEnrol)
+		if err = server.Save(); err != nil {
+			return fmt.Errorf("failed to init server: %w", err)
+		}
+	} else {
+		if err != nil {
+			return err
+		}
+	}
+
+	mux.HandleFunc("POST "+pathPrefix+"enrol/{peer}", server.handleEnrol)
+
+	mux.HandleFunc("GET "+pathPrefix+"inbox", server.handleGetInbox)
+
+	mux.HandleFunc("POST "+pathPrefix+"message/{recipient}", server.handlePostMessage)
+	mux.HandleFunc("GET "+pathPrefix+"message/{id}", server.handleGetMessage)
+	mux.HandleFunc("DELETE "+pathPrefix+"message/{id}", server.handleDeleteMessage)
+
+	mux.HandleFunc("GET "+pathPrefix+"peer/{peer}", server.handleGetPeer)
+
+	log.Println("listening on :8080")
+	return http.ListenAndServe(":8080", mux)
 }

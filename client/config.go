@@ -64,7 +64,6 @@ func LoadSecretConfiguration(store string) (*Config, error) {
 			Servers: make(map[string]*Endpoint),
 			Properties: &Properties{
 				AcceptPeers: true,
-				Metadata:    true,
 			}}, nil
 	}
 

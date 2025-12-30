@@ -11,7 +11,22 @@ type InboxMessage struct {
 	ID        uuid.UUID `json:"id"`
 	Sender    string    `json:"sender"`
 	Timestamp int64     `json:"timestamp"`
-	Size      int       `json:"size"`
+	Size      int       `json:"size"`     // encrypted size. used as a hint.
+	Metadata  []byte    `json:"metadata"` // encrypted metadata, contains unencrypted size.
+}
+
+type Metadata struct {
+	Description string `json:"description"`
+	Size        int    `json:"size"`
+	Filename    string `json:"filename"`
+}
+
+// Envelope wraps encrypted metadata with the encrypted payload.
+// Metadata is returned for 'secrt ls', while the payload is returned
+// for 'secrt get'.
+type Envelope struct {
+	Payload  []byte `json:"payload"`
+	Metadata []byte `json:"metadata"` // encrypted secret.Metadata (json)
 }
 
 type Signature struct {
@@ -19,7 +34,12 @@ type Signature struct {
 	Sig  []byte `json:"sig"`
 }
 
-// ShareResponse is the message ID returned by the server after a share.
-type ShareResponse struct {
+// SendResponse is the message ID returned by the server after a share.
+type SendResponse struct {
 	ID uuid.UUID `json:"id"`
+}
+
+type Peer struct {
+	Peer      string `json:"peer"`
+	PublicKey []byte `json:"publicKey"`
 }

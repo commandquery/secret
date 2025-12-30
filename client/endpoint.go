@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -12,12 +13,17 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/commandquery/secret"
+	"github.com/commandquery/secret/server"
 	"golang.org/x/crypto/nacl/box"
 	"golang.org/x/term"
 )
+
+var ErrUnknownPeer error = errors.New("unknown peer")
+var ErrSecretTooBig error = errors.New("secret too big")
 
 func confirm(prompt string) bool {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
@@ -52,14 +58,24 @@ func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) 
 	}
 
 	if !config.Properties.AcceptPeers {
-		return nil, fmt.Errorf("unknown peer %s; use 'secrt peer add %s' to use the server's public key for this peer", peerId)
+		return nil, errors.Join(ErrUnknownPeer, fmt.Errorf("unknown peer: %s", peerId))
 	}
+
+	newPeer, err := endpoint.AddPeer(peerId)
+	if err != nil {
+		return nil, fmt.Errorf("unable to add peer: %w", err)
+	}
+
+	return newPeer, nil
+}
+
+func (endpoint *Endpoint) AddPeer(peerId string) (*Peer, error) {
 
 	u, err := url.Parse(endpoint.URL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid server URL: %w", err)
 	}
-	u.Path = path.Join(u.Path, "publickey", url.PathEscape(peerId))
+	u.Path = path.Join(u.Path, "peer", url.PathEscape(peerId))
 
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
@@ -82,22 +98,32 @@ func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) 
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("send failed: %s: %s", resp.Status, body)
+		return nil, fmt.Errorf("peer request failed: %s: %s", resp.Status, body)
 	}
 
-	key, err := io.ReadAll(resp.Body)
+	peerjs, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read public key: %w", err)
+		return nil, fmt.Errorf("unable to read peer: %w", err)
 	}
 
-	if len(key) != 32 {
-		return nil, fmt.Errorf("invalid public key length: %d", len(key))
+	var peerResp secrt.Peer
+	if err = json.Unmarshal(peerjs, &peerResp); err != nil {
+		return nil, fmt.Errorf("unable to unmarshal peer: %w", err)
 	}
 
-	fmt.Println("Adding new peer", peerId)
+	if len(peerResp.PublicKey) != 32 {
+		return nil, fmt.Errorf("invalid public key length: %d", len(peerResp.PublicKey))
+	}
+
+	if peerResp.Peer != peerId {
+		return nil, fmt.Errorf("received wrong peer id: %s (expected %s)", peerResp.Peer, peerId)
+	}
+
+	// Write this to stderr so stdout isn't affected.
+	_, _ = fmt.Fprintln(os.Stderr, "Adding new peer", peerId)
 	peer := &Peer{
 		PeerID:    peerId,
-		PublicKey: key,
+		PublicKey: peerResp.PublicKey,
 	}
 
 	endpoint.Peers[peerId] = peer
@@ -131,11 +157,13 @@ func (endpoint *Endpoint) SetSignature(req *http.Request) error {
 	return nil
 }
 
-// Send a secret to a peer.
-func CmdShare(config *Config, endpoint *Endpoint, args []string) error {
+// CmdSend sends a secret to a peer.
+func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 
-	flags := flag.NewFlagSet("share", flag.ContinueOnError)
+	flags := flag.NewFlagSet("send", flag.ContinueOnError)
 	longFormat := flags.Bool("l", false, "display the full uuid")
+	description := flags.String("d", "", "include a description")
+
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -143,25 +171,48 @@ func CmdShare(config *Config, endpoint *Endpoint, args []string) error {
 	args = flags.Args()
 	recipient := args[0]
 
-	plaintext, err := readInput(flags.Args(), 1)
+	plaintext, metadata, err := readInput(flags.Args(), 1)
 	if err != nil {
 		return err
 	}
+
+	metadata.Description = *description
 
 	user, err := endpoint.GetPeer(config, recipient)
 	if err != nil {
 		return fmt.Errorf("unable to get peer: %w", err)
 	}
 
-	ciphertext, err := endpoint.Encrypt(plaintext, user.PublicKey)
+	// Now we have the plaintext message and metadata; we need to encrypt them both into an Envelope.
+	clearmeta, err := json.Marshal(metadata)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to marshal metadata: %w", err)
 	}
 
-	// FIXME: better handling of URL
-	endpointURL := endpoint.URL + "share/" + recipient
+	envelope := secrt.Envelope{}
 
-	req, err := http.NewRequest("POST", endpointURL, bytes.NewReader(ciphertext))
+	envelope.Metadata, err = endpoint.Encrypt(clearmeta, user.PublicKey)
+	if err != nil {
+		return fmt.Errorf("unable to encrypt envelope: %w", err)
+	}
+
+	envelope.Payload, err = endpoint.Encrypt(plaintext, user.PublicKey)
+	if err != nil {
+		return fmt.Errorf("unable to encrypt payload: %w", err)
+	}
+
+	envelopeJS, err := json.Marshal(envelope)
+	if err != nil {
+		return fmt.Errorf("unable to encode envelope: %w", err)
+	}
+
+	if len(envelopeJS) > server.MessageSizeLimit {
+		return ErrSecretTooBig
+	}
+
+	endpointURL := endpoint.URL + "message/" + recipient
+
+	req, err := http.NewRequest("POST", endpointURL, bytes.NewReader(envelopeJS))
 	if err != nil {
 		return err
 	}
@@ -183,101 +234,32 @@ func CmdShare(config *Config, endpoint *Endpoint, args []string) error {
 		return fmt.Errorf("share failed: %s: %s", resp.Status, body)
 	}
 
-	var shareResponse secrt.ShareResponse
+	var shareResponse secrt.SendResponse
 	if err = json.NewDecoder(resp.Body).Decode(&shareResponse); err != nil {
 		return fmt.Errorf("unable to decode share response: %w", err)
 	}
 
 	if *longFormat {
-		fmt.Println("shared!", shareResponse.ID.String())
+		fmt.Println(shareResponse.ID.String())
 	} else {
-		fmt.Println("shared!", shareResponse.ID.String()[:8])
+		fmt.Println(shareResponse.ID.String()[:8])
 	}
 
 	return nil
-}
-
-// List the secrets on the server.
-// TODO: include -l option to get the long format
-func CmdLs(endpoint *Endpoint, args []string) error {
-
-	// FIXME: better handling of URL
-	endpointURL := endpoint.URL + "inbox"
-
-	req, err := http.NewRequest("GET", endpointURL, nil)
-	if err != nil {
-		return err
-	}
-
-	if err = endpoint.SetSignature(req); err != nil {
-		return fmt.Errorf("unable to set signature: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode == http.StatusNoContent {
-		fmt.Println("No messages")
-		return nil
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("inbox failed: %s %s", resp.Status, body)
-	}
-
-	var inbox secrt.Inbox
-	err = json.Unmarshal(body, &inbox)
-	if err != nil {
-		return fmt.Errorf("unable to parse inbox: %w", err)
-	}
-
-	// Work out if there are any collisions with the 8-character short ID.
-	// If so, use the long ID.
-	prefixMap := make(map[string]bool)
-	for _, msg := range inbox.Messages {
-		prefix := msg.ID.String()[:8]
-		if prefixMap[prefix] {
-			printLongInbox(inbox)
-			return nil
-		}
-		prefixMap[prefix] = true
-	}
-
-	printShortInbox(inbox)
-	return nil
-}
-
-func printShortInbox(inbox secrt.Inbox) {
-	fmt.Printf("%-8s  %10s  %-19s  %-s\n", "ID", "Size", "Sent", "Sender")
-
-	for _, msg := range inbox.Messages {
-		ts := time.Unix(msg.Timestamp, 0).Local().Format("2006-01-02 15:04:05")
-		fmt.Printf("%8s  %10d  %19s  %s\n", msg.ID.String()[:8], msg.Size, ts, msg.Sender)
-	}
-}
-
-func printLongInbox(inbox secrt.Inbox) {
-	fmt.Printf("%-36s  %10s  %-19s  %-s\n", "ID", "Size", "Sent", "Sender")
-
-	for _, msg := range inbox.Messages {
-		ts := time.Unix(msg.Timestamp, 0).Local().Format("2006-01-02 15:04:05")
-		fmt.Printf("%36s  %10d  %19s  %s\n", msg.ID.String(), msg.Size, ts, msg.Sender)
-	}
 }
 
 // CmdGet gets a secret. You can use either the short, 8-character UUID, or the full UUID
 // If there's more than one secret with the same short ID, the server will send us an error.
 func CmdGet(config *Config, endpoint *Endpoint, args []string) error {
 
+	flags := flag.NewFlagSet("get", flag.ContinueOnError)
+	targetFilename := flags.String("o", "", "output to the given filename")
+	if err := flags.Parse(args); err != nil {
+		return fmt.Errorf("unable to parse flags: %w", err)
+	}
+
 	// FIXME: better handling of URL
-	endpointURL := endpoint.URL + "message/" + args[0]
+	endpointURL := endpoint.URL + "message/" + flags.Arg(0)
 
 	req, err := http.NewRequest("GET", endpointURL, nil)
 	if err != nil {
@@ -315,9 +297,52 @@ func CmdGet(config *Config, endpoint *Endpoint, args []string) error {
 		return fmt.Errorf("unable to decrypt message: %w", err)
 	}
 
-	_, err = os.Stdout.Write(cleartext)
+	var target = os.Stdout
+	if *targetFilename != "" {
+		target, err = os.OpenFile(*targetFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+		if err != nil {
+			return fmt.Errorf("unable to open output file %s: %w", targetFilename, err)
+		}
+	}
+
+	defer target.Close()
+
+	_, err = target.Write(cleartext)
 	if err != nil {
 		return err
+	}
+
+	return nil
+}
+
+// CmdRm asks the server to delete a message.
+func CmdRm(config *Config, endpoint *Endpoint, args []string) error {
+
+	// FIXME: better handling of URL
+	endpointURL := endpoint.URL + "message/" + args[0]
+
+	req, err := http.NewRequest("DELETE", endpointURL, nil)
+	if err != nil {
+		return err
+	}
+
+	if err = endpoint.SetSignature(req); err != nil {
+		return fmt.Errorf("unable to set signature: %w", err)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("message %s not found", args[0])
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unable to delete message: %s %s", resp.Status, body)
 	}
 
 	return nil
@@ -329,22 +354,32 @@ func CmdGet(config *Config, endpoint *Endpoint, args []string) error {
 //
 // Args is the list of arguments, and arg is the zero-value index of the argument we
 // are looking for.
-func readInput(args []string, arg int) ([]byte, error) {
+func readInput(args []string, arg int) ([]byte, *secrt.Metadata, error) {
+	metadata := &secrt.Metadata{}
+
 	// Use a filename, or just stdin?
 	var reader io.Reader
 	if len(args) > arg {
 		file, err := os.Open(args[arg])
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		defer file.Close()
+		metadata.Filename = filepath.Base(file.Name())
 		reader = file
 	} else {
+		metadata.Filename = ""
 		reader = os.Stdin
 	}
 
-	return io.ReadAll(reader)
+	cleartext, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	metadata.Size = len(cleartext)
+	return cleartext, metadata, nil
 }
 
 func (endpoint *Endpoint) Encrypt(plaintext []byte, peerKey []byte) ([]byte, error) {

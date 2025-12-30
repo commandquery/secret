@@ -26,7 +26,7 @@ Stores a message for up to 24 hours. A message ID is assigned by the server.
 
 ### Public Key Access
 
-    GET https://secret.catapult.emersion.com/publickey/user@domain.com   // returns the user's public key
+    GET https://secret.catapult.emersion.com/peer/user@domain.com   // returns the user's public key
     Signature: <user@domain:time>, signed by sender, base64
 
 client needs the public key in order to be able to send a message.

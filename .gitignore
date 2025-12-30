@@ -1,3 +1,9 @@
 .DS_Store
 .idea
-/cmd/secret/server.json
+/test/OUTPUT.md
+/test/secrt
+/test/alice/secrt.json
+/test/bob/secrt.json
+/test/charlie/secrt.json
+/cmd/secrt/server.json
+/test/server.json

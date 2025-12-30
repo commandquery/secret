@@ -126,21 +126,29 @@ func main() {
 	case "key":
 		err = cmdKey(endpoint)
 
-	case "share":
 	case "send":
-		err = client.CmdShare(config, endpoint, args)
+		err = client.CmdSend(config, endpoint, args)
 		if err == nil {
-			err = config.Save() // TODO: should only happen if a peer was added. FIXME: no error check.
+			err = config.Save() // TODO: don't write unless modified
 		}
 
 	case "ls":
-		err = client.CmdLs(endpoint, args)
+		err = client.CmdLs(config, endpoint, args)
 
 	case "get":
 		err = client.CmdGet(config, endpoint, args)
 		if err == nil {
-			err = config.Save() // TODO: should only happen if a peer was added. FIXME: no error check.
+			err = config.Save() // TODO: don't write unless modified
 		}
+
+	case "peer":
+		err = client.CmdPeer(config, endpoint, args)
+		if err == nil {
+			err = config.Save() // TODO: don't write unless modified
+		}
+
+	case "rm":
+		err = client.CmdRm(config, endpoint, args)
 
 	case "set":
 		if len(args) != 1 {
@@ -149,7 +157,7 @@ func main() {
 
 		err = config.Set(args[0])
 		if err == nil {
-			err = config.Save()
+			err = config.Save() // TODO: don't write unless modified
 		}
 
 	case "genkey":
