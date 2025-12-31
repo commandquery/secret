@@ -1,13 +1,41 @@
 package client
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 
 	"github.com/commandquery/secrt"
 )
 
+func ReadKeyPhrase() []byte {
+	p1 := ReadPassword("Enter passphrase:  ")
+	if p1 == nil {
+		return nil
+	}
+
+	p2 := ReadPassword("Verify passphrase: ")
+	if p2 == nil {
+		return nil
+	}
+
+	if !bytes.Equal(p1, p2) {
+		fmt.Println("passphrase mismatch")
+		return nil
+	}
+
+	return p1
+}
+
 func CmdEnrol(config *Config, args []string) error {
+
+	fmt.Println("A passphrase will be used to protect your private key.")
+	fmt.Println()
+
+	//passphrase := ReadKeyPhrase()
+	//if passphrase == nil {
+	//	return fmt.Errorf("no passphrase provided")
+	//}
 
 	flags := flag.NewFlagSet("enrol", flag.ContinueOnError)
 	force := flags.Bool("force", false, "force overwrite")

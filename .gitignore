@@ -7,3 +7,6 @@
 /test/charlie/secrt.json
 /cmd/secrt/server.json
 /test/server.json
+/test/alice.json
+/test/bob.json
+/test/charlie.json

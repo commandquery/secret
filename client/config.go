@@ -22,6 +22,13 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
+type KeyStoreType string
+
+const (
+	KeyStoreClear    KeyStoreType = "clear"
+	KeyStorePassword KeyStoreType = "password"
+)
+
 // Peer contains information about other users.
 type Peer struct {
 	PeerID    string `json:"peerID"`
@@ -40,21 +47,44 @@ type Config struct {
 	Properties *Properties          `json:"properties"`
 }
 
+// PrivateKeyEnvelope is a concrete envelope around an abstract PrivateKeyStore interface.
+type PrivateKeyEnvelope struct {
+	Type       KeyStoreType    `json:"type"`
+	Properties json.RawMessage `json:"properties"`
+	Envelope   PrivateKeyStore `json:"-"` // The abstract envelope itself.
+}
+
+// PrivateKeyStore provides a mechanism whereby a private key can be wrapped
+// using a variety of methods. This might include storing the private key offboard,
+// e.g. via macOS keychain.
+//
+// Note that there is only a single, canonical private key per endpoint - the key from which the
+// public key is derived - but that key can be encoded and stored in multiple ways. To add a new
+// encoding (say, touch ID), it's necessary to first use an existing encoding to retreive the underlying key.
+type PrivateKeyStore interface {
+	Type() KeyStoreType             // Returns the type of this store
+	IsUnsealed() bool               // Indicates if the private key has been unsealed.
+	Unseal() error                  // Requests that the private key be unsealed.
+	GetPrivateKey() ([]byte, error) // Requests the private key material
+	Marshal() ([]byte, error)       // Marshal to JSON
+	Unmarshal([]byte) error         // Unmarshal to the type.
+}
+
 // Endpoint represents a single server as seen from a Client.
 // Most of the configuration is specific to the selected server.
 type Endpoint struct {
-	URL        string           `json:"url"`        // Endpoint URL
-	PeerID     string           `json:"peerID"`     // Actual PeerID for this user
-	ServerKey  []byte           `json:"serverKey"`  // Public key of this server
-	PrivateKey []byte           `json:"privateKey"` // Private key, encrypted with user's password
-	PublicKey  []byte           `json:"publicKey"`  // Public key for the private key
-	Peers      map[string]*Peer `json:"peers"`      // Contains info about other users
+	URL              string                `json:"url"`              // Endpoint URL
+	PeerID           string                `json:"peerID"`           // Actual PeerID for this user
+	ServerKey        []byte                `json:"serverKey"`        // Public key of this server
+	PrivateKeyStores []*PrivateKeyEnvelope `json:"privateKeyStores"` // Set of private keys, in order of user preference.
+	PublicKey        []byte                `json:"publicKey"`        // Public key for the private key
+	Peers            map[string]*Peer      `json:"peers"`            // Contains info about other users
 }
 
-// LoadSecretConfiguration loads the secret configuration, if there is one.
+// LoadClientConfig loads the secret configuration, if there is one.
 // Returns an empty object (with Stored == false) if no configuration exists.
-func LoadSecretConfiguration(store string) (*Config, error) {
-	secretContents, err := os.ReadFile(store)
+func LoadClientConfig(store string) (*Config, error) {
+	configJS, err := os.ReadFile(store)
 	if os.IsNotExist(err) {
 		// return an empty, configured object.
 		return &Config{
@@ -72,7 +102,7 @@ func LoadSecretConfiguration(store string) (*Config, error) {
 	}
 
 	config := Config{Stored: true, Store: store}
-	err = json.Unmarshal(secretContents, &config)
+	err = config.Unmarshal(configJS)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +118,7 @@ func LoadSecretConfiguration(store string) (*Config, error) {
 // was loaded.
 func (config *Config) Save() error {
 	secretFile := config.Store
-	contents, err := json.MarshalIndent(config, "", "  ")
+	contents, err := config.Marshal()
 	if err != nil {
 		return err
 	}
@@ -154,7 +184,8 @@ func (endpoint *Endpoint) enrol() error {
 	return nil
 }
 
-// AddServer adds a new server to the config, and generates a new keypair for that server.
+// AddServer adds a new server to the config, and generates a new, cleartext keypair for that server.
+// TODO: shouldn't default to a clear key store; possibly needs the key to be passed in.
 func (config *Config) AddServer(peerID, serverURL string) error {
 
 	public, private, err := box.GenerateKey(rand.Reader)
@@ -162,12 +193,18 @@ func (config *Config) AddServer(peerID, serverURL string) error {
 		return err
 	}
 
-	endpoint := &Endpoint{
-		URL:        serverURL,
-		PeerID:     peerID,
+	clearKeyStore := ClearKeyStore{
 		PrivateKey: private[:],
-		PublicKey:  public[:],
-		Peers:      make(map[string]*Peer),
+	}
+
+	endpoint := &Endpoint{
+		URL:    serverURL,
+		PeerID: peerID,
+		PrivateKeyStores: []*PrivateKeyEnvelope{
+			{Type: KeyStoreClear, Envelope: &clearKeyStore},
+		},
+		PublicKey: public[:],
+		Peers:     make(map[string]*Peer),
 	}
 
 	err = endpoint.enrol()
@@ -192,6 +229,50 @@ func (config *Config) Set(expression string) error {
 
 	if err := config.Properties.Set(namevalue[0], namevalue[1]); err != nil {
 		return fmt.Errorf("unable to set %s: %w", namevalue[0], err)
+	}
+
+	return nil
+}
+
+// Marshal returns the JSON representation of the config. Before marshalling, it updates the
+// KeyStore JSON representation, which enables load/save of the underlying interface data.
+func (config *Config) Marshal() ([]byte, error) {
+	var err error
+
+	for _, server := range config.Servers {
+		for _, key := range server.PrivateKeyStores {
+			key.Properties, err = key.Envelope.Marshal()
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return json.MarshalIndent(config, "", "  ")
+}
+
+// Unmarshal reads JSON and updates the associated config. As part of the unmarshalling process,
+// it creates concrete KeyStore instances (PrivateKeyStore interface) based on the PrivateKeyEnvelope
+// types.
+func (config *Config) Unmarshal(data []byte) error {
+	err := json.Unmarshal(data, config)
+	if err != nil {
+		return fmt.Errorf("unable to parse config: %w", err)
+	}
+
+	for _, server := range config.Servers {
+		for _, key := range server.PrivateKeyStores {
+			switch key.Type {
+			case KeyStoreClear:
+				ks := &ClearKeyStore{}
+				err = ks.Unmarshal(key.Properties)
+				if err != nil {
+					return err
+				}
+
+				key.Envelope = ks
+			}
+		}
 	}
 
 	return nil

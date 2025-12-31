@@ -29,3 +29,15 @@ func Confirm(prompt string) bool {
 
 	return b[0] == 'y' || b[0] == 'Y'
 }
+
+func ReadPassword(prompt string) []byte {
+	fmt.Print(prompt)
+	password, err := term.ReadPassword(int(os.Stdin.Fd()))
+	fmt.Println()
+
+	if err != nil {
+		return nil
+	}
+
+	return password
+}

@@ -1,8 +1,9 @@
 # not-so-secret TODO
 
+- [ ] protect the private key on the client (eg with a passphrase)
+  - [ ] private key is a structure containing key type
 - [ ] send secrets to multiple people
 - [ ] deploy as an actual service (kill the version running at emersion)
-- [ ] protect the private key on the client (eg with a passphrase)
 - [ ] support for multiple servers (eg, -s server)
 - [ ] server-side struct mutations aren't generally protected by a mutex.
 - [ ] saving client or server config should be atomic

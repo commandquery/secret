@@ -18,7 +18,7 @@ func Main(args []string) {
 		secrt.Exit(1, err)
 	}
 
-	config, err := LoadSecretConfiguration(store)
+	config, err := LoadClientConfig(store)
 	if err != nil {
 		secrt.Exit(1, err)
 	}

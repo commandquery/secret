@@ -159,7 +159,7 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 		return fmt.Errorf("unable to get peer: %w", err)
 	}
 
-	// Now we have the plaintext message and metadata; we need to encrypt them both into an Envelope.
+	// Now we have the plaintext message and metadata; we need to encrypt them both into an PrivateKeyEnvelope.
 	clearmeta, err := json.Marshal(metadata)
 	if err != nil {
 		return fmt.Errorf("unable to marshal metadata: %w", err)
@@ -358,6 +358,18 @@ func readInput(args []string, arg int) ([]byte, *secrt.Metadata, error) {
 	return cleartext, metadata, nil
 }
 
+func (endpoint *Endpoint) GetPrivateKey() ([]byte, error) {
+	for _, key := range endpoint.PrivateKeyStores {
+		if key.Envelope != nil {
+			if key.Envelope.IsUnsealed() {
+				return key.Envelope.GetPrivateKey()
+			}
+		}
+	}
+
+	return nil, fmt.Errorf("no private key found")
+}
+
 func (endpoint *Endpoint) Encrypt(plaintext []byte, peerKey []byte) ([]byte, error) {
 	// You must use a different nonce for each message you encrypt with the
 	// same key. Since the nonce here is 192 bits long, a random value
@@ -374,8 +386,13 @@ func (endpoint *Endpoint) Encrypt(plaintext []byte, peerKey []byte) ([]byte, err
 	// Append the nonce, which is a fixed length (24 bytes).
 	ciphertext = append(ciphertext, nonce[:]...)
 
+	privateKey, err := endpoint.GetPrivateKey()
+	if err != nil {
+		return nil, err
+	}
+
 	// Encrypt the message itself and append to the nonce + public key
-	return box.Seal(ciphertext, plaintext, &nonce, secrt.To32(peerKey), secrt.To32(endpoint.PrivateKey)), nil
+	return box.Seal(ciphertext, plaintext, &nonce, secrt.To32(peerKey), secrt.To32(privateKey)), nil
 }
 
 func (endpoint *Endpoint) Decrypt(config *Config, peerID string, ciphertext []byte) ([]byte, error) {
@@ -392,8 +409,13 @@ func (endpoint *Endpoint) Decrypt(config *Config, peerID string, ciphertext []by
 	var nonce [24]byte
 	copy(nonce[:], ciphertext[1:25])
 
+	privateKey, err := endpoint.GetPrivateKey()
+	if err != nil {
+		return nil, err
+	}
+
 	var out []byte
-	out, ok := box.Open(out, ciphertext[25:], &nonce, secrt.To32(peer.PublicKey), secrt.To32(endpoint.PrivateKey))
+	out, ok := box.Open(out, ciphertext[25:], &nonce, secrt.To32(peer.PublicKey), secrt.To32(privateKey))
 
 	if !ok {
 		return nil, fmt.Errorf("unable to authenticate message from %s", peerID)
