@@ -8,7 +8,7 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
-// Generate a key pair. This is mostly for seting up a server
+// CmdGenKey generates a key pair. This is mostly for setting up a server
 func CmdGenKey() {
 	pub, priv, err := box.GenerateKey(rand.Reader)
 	if err != nil {

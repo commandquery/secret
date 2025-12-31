@@ -20,9 +20,6 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
-// MessageSizeLimit limits the size of individual messages.
-const MessageSizeLimit = 50 * 1024 // 100 KiB
-
 // MessageInboxLimit limits the number of messages per user
 // If exceeded, the oldest message is silently deleted.
 const MessageInboxLimit = 10
@@ -254,7 +251,7 @@ func (server *SecretServer) handlePostMessage(w http.ResponseWriter, r *http.Req
 
 	// Messages are sent in an Envelope that contains separately encrypted
 	// Metadata and Payload objects.
-	r.Body = http.MaxBytesReader(w, r.Body, MessageSizeLimit)
+	r.Body = http.MaxBytesReader(w, r.Body, secrt.MessageSizeLimit)
 	envelopeJS, err := io.ReadAll(r.Body)
 	if err != nil {
 		log.Println("unable to read body:", err)

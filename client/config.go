@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -142,7 +143,7 @@ func (config *Config) GetFileStore(filename string) (string, error) {
 	}
 
 	err = os.MkdirAll(secretStore, 0700)
-	if err != nil && err != os.ErrExist {
+	if err != nil && !errors.Is(err, os.ErrExist) {
 		return "", err
 	}
 
@@ -185,7 +186,7 @@ func (endpoint *Endpoint) enrol() error {
 	return nil
 }
 
-func NewKeyStore(storeType KeyStoreType, privateKey []byte) (PrivateKeyStore, error) {
+func NewKeyStore(endpoint *Endpoint, storeType KeyStoreType, privateKey []byte) (PrivateKeyStore, error) {
 	switch storeType {
 	case KeyStoreClear:
 		return NewClearKeyStore(privateKey), nil
@@ -194,7 +195,7 @@ func NewKeyStore(storeType KeyStoreType, privateKey []byte) (PrivateKeyStore, er
 		return nil, fmt.Errorf("unsupported key store type: %s", storeType)
 	case KeyStorePlatform:
 		// TODO
-		return nil, fmt.Errorf("unsupported key store type: %s", storeType)
+		return NewPlatformKeyStore(endpoint, privateKey)
 	default:
 		return nil, fmt.Errorf("unsupported key store type: %s", storeType)
 
@@ -210,19 +211,20 @@ func (config *Config) AddEndpoint(peerID, serverURL string, storeType KeyStoreTy
 		return err
 	}
 
-	keyStore, err := NewKeyStore(storeType, private[:])
+	endpoint := &Endpoint{
+		URL:       serverURL,
+		PeerID:    peerID,
+		PublicKey: public[:],
+		Peers:     make(map[string]*Peer),
+	}
+
+	keyStore, err := NewKeyStore(endpoint, storeType, private[:])
 	if err != nil {
 		return err
 	}
 
-	endpoint := &Endpoint{
-		URL:    serverURL,
-		PeerID: peerID,
-		PrivateKeyStores: []*PrivateKeyEnvelope{
-			{Type: KeyStoreClear, keyStore: keyStore},
-		},
-		PublicKey: public[:],
-		Peers:     make(map[string]*Peer),
+	endpoint.PrivateKeyStores = []*PrivateKeyEnvelope{
+		{Type: storeType, keyStore: keyStore},
 	}
 
 	err = endpoint.enrol()
@@ -283,6 +285,15 @@ func (config *Config) Unmarshal(data []byte) error {
 			switch key.Type {
 			case KeyStoreClear:
 				ks := &ClearKeyStore{}
+				err = ks.Unmarshal(key.Properties)
+				if err != nil {
+					return err
+				}
+
+				key.keyStore = ks
+
+			case KeyStorePlatform:
+				ks := &PlatformKeyStore{}
 				err = ks.Unmarshal(key.Properties)
 				if err != nil {
 					return err

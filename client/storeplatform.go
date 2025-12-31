@@ -4,27 +4,32 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+
+	"github.com/zalando/go-keyring"
 )
 
 type PlatformKeyStore struct {
-	Service    string `json:"service"`  // Always "secrt.io"
-	User       string `json:"user"`     // Always the URL of the endpoint
-	Password   string `json:"password"` // Base64 encoded key.
+	Service    string `json:"service"` // Always "secrt.io"
+	User       string `json:"user"`    // Always the URL of the endpoint
 	privateKey []byte // Cached (unsealed) private key, never marshalled/unmarshalled
 }
 
-func NewPlatformKeyStore(endpoint *Endpoint, privateKey []byte) *PlatformKeyStore {
+func NewPlatformKeyStore(endpoint *Endpoint, privateKey []byte) (*PlatformKeyStore, error) {
 
 	key64 := base64.StdEncoding.EncodeToString(privateKey)
 
-	// TODO: STORE THE KEY!
-
-	return &PlatformKeyStore{
+	keystore := &PlatformKeyStore{
 		Service:    "secrt.io",
 		User:       endpoint.URL,
-		Password:   key64,
 		privateKey: privateKey,
 	}
+
+	err := keyring.Set(keystore.Service, keystore.User, key64)
+	if err != nil {
+		return nil, fmt.Errorf("unable to save key to platform store: %w", err)
+	}
+
+	return keystore, nil
 }
 
 func (s *PlatformKeyStore) Type() KeyStoreType {
@@ -36,8 +41,13 @@ func (s *PlatformKeyStore) IsUnsealed() bool {
 }
 
 func (s *PlatformKeyStore) Unseal() error {
-	// TODO: GET THE PRIVATE KEY!
-	return nil
+	secret, err := keyring.Get(s.Service, s.User)
+	if err != nil {
+		return fmt.Errorf("unable to get secret from platform store: %w", err)
+	}
+
+	s.privateKey, err = base64.StdEncoding.DecodeString(secret)
+	return err
 }
 
 func (s *PlatformKeyStore) GetPrivateKey() ([]byte, error) {

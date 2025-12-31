@@ -29,14 +29,6 @@ func ReadKeyPhrase() []byte {
 
 func CmdEnrol(config *Config, args []string) error {
 
-	fmt.Println("A passphrase will be used to protect your private key.")
-	fmt.Println()
-
-	//passphrase := ReadKeyPhrase()
-	//if passphrase == nil {
-	//	return fmt.Errorf("no passphrase provided")
-	//}
-
 	flags := flag.NewFlagSet("enrol", flag.ContinueOnError)
 	force := flags.Bool("force", false, "force overwrite")
 	storeType := flags.String("store", "platform", "Storage type for private key")

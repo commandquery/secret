@@ -2,6 +2,9 @@ package secrt
 
 import "github.com/google/uuid"
 
+// MessageSizeLimit limits the size of individual messages.
+const MessageSizeLimit = 50 * 1024 // 100 KiB
+
 // Inbox is the JSON struct used to represent the inbox.
 type Inbox struct {
 	Messages []InboxMessage `json:"messages"`

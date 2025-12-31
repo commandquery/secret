@@ -1,4 +1,7 @@
 #!/bin/bash
+#
+# TODO
+# Write assertions for the test results!
 
 #
 # Basic setup and start server
@@ -14,7 +17,7 @@ trap cleanup EXIT
 
 go build -o secrt ../cmd/secrt
 
-rm -f server.json alice.json bob.json charlie.json
+rm -f server.json alice.json bob.json charlie.json denise.json
 
 secrt server &
 server=$!
@@ -134,5 +137,18 @@ secrt -f alice.json peer ls
 #
 # Secrt peer add
 #
+echo "--- secret peer add"
 secrt -f alice.json peer add charlie@example.com
 secrt -f alice.json peer ls
+
+#
+# Test platform keystore create
+#
+echo "--- enrol with platform keystore"
+secrt -f denise.json enrol --store=platform denise@example.com http://localhost:8080/
+
+#
+# Test platform keystore access
+echo "--- send with platform keystore"
+MSGID=$(echo "platform keystore" | secrt -f denise.json send alice@example.com)
+MSG=$(secrt -f alice.json get $MSGID)

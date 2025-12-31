@@ -13,7 +13,7 @@ var README string
 func To32(bytes []byte) *[32]byte {
 	var result [32]byte
 	if copy(result[:], bytes) != 32 {
-		panic(fmt.Errorf("Attempted to create non-32 bit key"))
+		panic(fmt.Errorf("Attempted to create non-32 byte key"))
 	}
 
 	return &result
