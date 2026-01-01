@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 
@@ -36,19 +37,22 @@ func CmdEnrol(config *Config, args []string) error {
 		secrt.Usage("secret enrol [--force] user@domain https://server/")
 	}
 
-	// If only one arg and the config came from disk, don't overwrite it.
-	if config.Stored && !*force {
-		secrt.Exit(1, fmt.Errorf("a secret configuration already exists; use --force to overwrite it"))
-	}
-
 	args = flags.Args()
 	if len(args) != 2 {
 		secrt.Usage("secret enrol [--force] user@domain https://server/")
 	}
 
-	if err := config.AddEndpoint(args[0], args[1], KeyStoreType(*storeType)); err != nil {
-		secrt.Exit(1, fmt.Errorf("unable to enrol user: %w", err))
+	if err := config.AddEndpoint(args[0], args[1], KeyStoreType(*storeType), *force); err != nil {
+		if errors.Is(err, ErrExistingEnrolment) {
+			secrt.Exit(1, fmt.Errorf("unable to enrol user: %w; use --force to override", err))
+		} else {
+			secrt.Exit(1, fmt.Errorf("unable to enrol user: %w", err))
+		}
 	}
+
+	// Set the default endpoint to the new endpoint. I think this is probably
+	// the behaviour you'd expect after enrolling with a new server.
+	config.Properties.DefaultEndpoint = len(config.Endpoints) - 1
 
 	return config.Save()
 }

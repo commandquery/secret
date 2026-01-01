@@ -6,14 +6,24 @@ import (
 	"os"
 )
 
-//go:embed README.md
+//go:embed USAGE.md
 var README string
 
-// To32 converts a slice to a 32 byte array for use with nacl.
+// To32 converts a slice to a 32 byte array for use with nacl/box.
 func To32(bytes []byte) *[32]byte {
 	var result [32]byte
 	if copy(result[:], bytes) != 32 {
-		panic(fmt.Errorf("Attempted to create non-32 byte key"))
+		panic(fmt.Errorf("attempted to create non-32 byte key"))
+	}
+
+	return &result
+}
+
+// To64 converts a slice to a 64 byte array for use with nacl/sign.
+func To64(bytes []byte) *[64]byte {
+	var result [64]byte
+	if copy(result[:], bytes) != 64 {
+		panic(fmt.Errorf("attempted to create non-64 byte key"))
 	}
 
 	return &result

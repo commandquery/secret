@@ -1,18 +1,18 @@
 package client
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/commandquery/secrt"
@@ -20,7 +20,23 @@ import (
 )
 
 var ErrUnknownPeer error = errors.New("unknown peer")
+var ErrExistingEnrolment error = errors.New("already enrolled")
 var ErrSecretTooBig error = errors.New("secret too big")
+
+// Path returns a path URL relative to the endpoint.
+func (endpoint *Endpoint) Path(path ...string) string {
+	var urlPath strings.Builder
+
+	for i, p := range path {
+		if i > 0 {
+			urlPath.WriteRune('/')
+		}
+		urlPath.WriteString(url.PathEscape(p))
+	}
+
+	// note that endpoint URL must always end in "/".
+	return endpoint.URL + urlPath.String()
+}
 
 // GetPeer returns the public key for a given peer (if known).
 func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) {
@@ -40,18 +56,15 @@ func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) 
 		return nil, fmt.Errorf("unable to add peer: %w", err)
 	}
 
+	config.modified = true
 	return newPeer, nil
 }
 
 func (endpoint *Endpoint) AddPeer(peerId string) (*Peer, error) {
 
-	u, err := url.Parse(endpoint.URL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid server URL: %w", err)
-	}
-	u.Path = path.Join(u.Path, "peer", url.PathEscape(peerId))
+	endpointURL := endpoint.Path("peer", peerId)
 
-	req, err := http.NewRequest("GET", u.String(), nil)
+	req, err := http.NewRequest("GET", endpointURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("unexpected error: %w", err)
 	}
@@ -131,119 +144,15 @@ func (endpoint *Endpoint) SetSignature(req *http.Request) error {
 	return nil
 }
 
-// CmdGet gets a secret. You can use either the short, 8-character UUID, or the full UUID
-// If there's more than one secret with the same short ID, the server will send us an error.
-func CmdGet(config *Config, endpoint *Endpoint, args []string) error {
-
-	flags := flag.NewFlagSet("get", flag.ContinueOnError)
-	targetFilename := flags.String("o", "", "output to the given filename")
-	if err := flags.Parse(args); err != nil {
-		return fmt.Errorf("unable to parse flags: %w", err)
-	}
-
-	// FIXME: better handling of URL
-	endpointURL := endpoint.URL + "message/" + flags.Arg(0)
-
-	req, err := http.NewRequest("GET", endpointURL, nil)
-	if err != nil {
-		return err
-	}
-
-	if err = endpoint.SetSignature(req); err != nil {
-		return fmt.Errorf("unable to set signature: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/octet-stream")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("message %s not found", args[0])
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unable to get message: %s %s", resp.Status, body)
-	}
-
-	body, _ := io.ReadAll(resp.Body)
-
-	peerId := resp.Header.Get("Peer-ID")
-
-	cleartext, err := endpoint.Decrypt(config, peerId, body)
-
-	if err != nil {
-		return fmt.Errorf("unable to decrypt message: %w", err)
-	}
-
-	var target = os.Stdout
-	if *targetFilename != "" {
-		target, err = os.OpenFile(*targetFilename, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-		if err != nil {
-			return fmt.Errorf("unable to open output file %s: %w", *targetFilename, err)
-		}
-	}
-
-	defer target.Close()
-
-	_, err = target.Write(cleartext)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// CmdRm asks the server to delete a message.
-func CmdRm(config *Config, endpoint *Endpoint, args []string) error {
-
-	// FIXME: better handling of URL
-	endpointURL := endpoint.URL + "message/" + args[0]
-
-	req, err := http.NewRequest("DELETE", endpointURL, nil)
-	if err != nil {
-		return err
-	}
-
-	if err = endpoint.SetSignature(req); err != nil {
-		return fmt.Errorf("unable to set signature: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("message %s not found", args[0])
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unable to delete message: %s %s", resp.Status, body)
-	}
-
-	return nil
-}
-
-// readInput reads a byte slice from a file or stdin.
-// If the filename is "-" or if it's outside the array, read from stdin.
-// Otherwise, read from the file.
-//
-// Args is the list of arguments, and arg is the zero-value index of the argument we
-// are looking for.
-func readInput(args []string, arg int) ([]byte, *secrt.Metadata, error) {
+// readInput reads a byte slice from a file or stdin. If the filename is "", read from stdin.
+// Returns the byte array as well as file metadata.
+func readInput(filename string) ([]byte, *secrt.Metadata, error) {
 	metadata := &secrt.Metadata{}
 
 	// Use a filename, or just stdin?
 	var reader io.Reader
-	if len(args) > arg {
-		file, err := os.Open(args[arg])
+	if filename != "" {
+		file, err := os.Open(filename)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -345,4 +254,80 @@ func (endpoint *Endpoint) Decrypt(config *Config, peerID string, ciphertext []by
 	}
 
 	return out, nil
+}
+
+func (endpoint *Endpoint) GetChallenge() (*secrt.ChallengeRequest, error) {
+	endpointURL := endpoint.Path("challenge")
+	resp, err := http.Get(endpointURL)
+	if err != nil {
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	var challenge *secrt.ChallengeRequest
+	if err := json.Unmarshal(body, &challenge); err != nil {
+		return nil, err
+	}
+
+	return challenge, nil
+}
+
+// Enrol with the given server. Enrolling means the server knows about
+// me, and I know the server's public key.
+// Note that enrolment is the only API that doesn't require a signature, so the
+// structure of this client code is unique.
+//
+// TODO: should require HashCash to enrol.
+func (endpoint *Endpoint) enrol() error {
+
+	challengeRequest, err := endpoint.GetChallenge()
+	if err != nil {
+		return fmt.Errorf("unable to get challenge: %w", err)
+	}
+
+	challengeResponse, err := secrt.SolveChallenge(challengeRequest)
+	if err != nil {
+		return fmt.Errorf("unable to solve challenge: %w", err)
+	}
+
+	endpointURL := endpoint.Path("enrol", endpoint.PeerID)
+
+	// Post my public key
+	req, err := http.NewRequest(http.MethodPost, endpointURL, bytes.NewReader(endpoint.PublicKey))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("Challenge", base64.StdEncoding.EncodeToString(challengeResponse.Challenge))
+	req.Header.Set("Nonce", fmt.Sprintf("%d", challengeResponse.Nonce))
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("unable to enrol: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		fmt.Println("enrolment completed")
+	case http.StatusAccepted:
+		fmt.Println("enrolment requested")
+	case http.StatusConflict:
+		return fmt.Errorf("user already enrolled")
+	default:
+		return fmt.Errorf("unexpected status from server: %s", resp.Status)
+	}
+
+	serverKey, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("unable to read server key: %w", err)
+	}
+
+	endpoint.ServerKey = serverKey
+	return nil
 }

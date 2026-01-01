@@ -7,16 +7,13 @@ package client
 //
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"os"
-	"path"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -42,11 +39,12 @@ const ConfigVersion = 1
 
 // Config represents the client configuration file.
 type Config struct {
-	Version    int                  `json:"version"` // Config file version
-	Store      string               `json:"-"`       // Location of secrets store
-	Stored     bool                 `json:"-"`       // Indicates if the config came from disk (not in JSON)
-	Servers    map[string]*Endpoint `json:"servers"` // 0th server is the default server
-	Properties *Properties          `json:"properties"`
+	Version    int         `json:"version"`   // Config file version
+	Endpoints  []*Endpoint `json:"endpoints"` // 0th server is the default server
+	Properties *Properties `json:"properties"`
+
+	store    string // Location of secrets store
+	modified bool   // indicates that the config changed.
 }
 
 // PrivateKeyEnvelope is a concrete envelope around an abstract PrivateKeyStore interface.
@@ -90,10 +88,10 @@ func LoadClientConfig(store string) (*Config, error) {
 	if os.IsNotExist(err) {
 		// return an empty, configured object.
 		return &Config{
-			Version: ConfigVersion,
-			Stored:  false,
-			Store:   store,
-			Servers: make(map[string]*Endpoint),
+			store:     store,
+			modified:  true,
+			Version:   ConfigVersion,
+			Endpoints: make([]*Endpoint, 0, 1),
 			Properties: &Properties{
 				AcceptPeers: true,
 			}}, nil
@@ -103,7 +101,7 @@ func LoadClientConfig(store string) (*Config, error) {
 		return nil, err
 	}
 
-	config := Config{Stored: true, Store: store}
+	config := Config{store: store}
 	err = config.Unmarshal(configJS)
 	if err != nil {
 		return nil, err
@@ -116,19 +114,68 @@ func LoadClientConfig(store string) (*Config, error) {
 	return &config, nil
 }
 
-// Save a secret configuration. This is saved to the location from which it
-// was loaded.
-func (config *Config) Save() error {
-	secretFile := config.Store
+func (config *Config) atomicSave() error {
 	contents, err := config.Marshal()
 	if err != nil {
 		return err
 	}
-
 	contents = append(contents, '\n')
 
-	err = os.WriteFile(secretFile, contents, 0600)
-	return err
+	dir := filepath.Dir(config.store)
+
+	f, err := os.CreateTemp(dir, ".tmp-")
+	if err != nil {
+		return err
+	}
+	tmpName := f.Name()
+
+	// Clean up on any error path
+	defer func() {
+		if tmpName != "" {
+			os.Remove(tmpName)
+		}
+	}()
+
+	if err = f.Chmod(0600); err != nil {
+		f.Close()
+		return err
+	}
+
+	if _, err = f.Write(contents); err != nil {
+		f.Close()
+		return err
+	}
+
+	if err = f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+
+	if err = f.Close(); err != nil {
+		return err
+	}
+
+	if err = os.Rename(tmpName, config.store); err != nil {
+		return err
+	}
+
+	tmpName = "" // prevent defer from removing
+	return nil
+}
+
+// Save a secret configuration. This is saved to the location from which it
+// was loaded.
+func (config *Config) Save() error {
+
+	if !config.modified {
+		return nil
+	}
+
+	if err := config.atomicSave(); err != nil {
+		return fmt.Errorf("could not save config: %v", err)
+	}
+
+	return nil
 }
 
 // GetFileStore returns the path to the named file.
@@ -136,7 +183,7 @@ func (config *Config) GetFileStore(filename string) (string, error) {
 	uuname := uuid.NewSHA1(uuid.MustParse("F41E83C3-B3EE-4194-8B0F-5D1932041A86"), []byte(filename)).String()
 
 	// Create the directory if we need to.
-	secretStore := config.Store + "/files"
+	secretStore := config.store + "/files"
 	_, err := os.Stat(secretStore)
 	if err == nil {
 		return secretStore + "/" + uuname, nil
@@ -150,42 +197,6 @@ func (config *Config) GetFileStore(filename string) (string, error) {
 	return secretStore + "/" + uuname, nil
 }
 
-// Enrol with the given server. Enrolling means the server knows about
-// me, and I know the server's public key.
-func (endpoint *Endpoint) enrol() error {
-	u, err := url.Parse(endpoint.URL)
-	if err != nil {
-		return fmt.Errorf("invalid server URL: %w", err)
-	}
-	u.Path = path.Join(u.Path, "enrol", url.PathEscape(endpoint.PeerID))
-
-	// Post my public key
-	resp, err := http.Post(u.String(), "application/octet-stream", bytes.NewReader(endpoint.PublicKey))
-	if err != nil {
-		return fmt.Errorf("unable to enrol: %w", err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		fmt.Println("enrolment completed")
-	case http.StatusAccepted:
-		fmt.Println("enrolment requested")
-	case http.StatusConflict:
-		return fmt.Errorf("user already enrolled")
-	default:
-		return fmt.Errorf("unexpected status from server: %s", resp.Status)
-	}
-
-	serverKey, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("unable to read server key: %w", err)
-	}
-
-	endpoint.ServerKey = serverKey
-	return nil
-}
-
 func NewKeyStore(endpoint *Endpoint, storeType KeyStoreType, privateKey []byte) (PrivateKeyStore, error) {
 	switch storeType {
 	case KeyStoreClear:
@@ -194,7 +205,6 @@ func NewKeyStore(endpoint *Endpoint, storeType KeyStoreType, privateKey []byte) 
 		// TODO
 		return nil, fmt.Errorf("unsupported key store type: %s", storeType)
 	case KeyStorePlatform:
-		// TODO
 		return NewPlatformKeyStore(endpoint, privateKey)
 	default:
 		return nil, fmt.Errorf("unsupported key store type: %s", storeType)
@@ -202,41 +212,72 @@ func NewKeyStore(endpoint *Endpoint, storeType KeyStoreType, privateKey []byte) 
 	}
 }
 
+// GetEndpoint returns any existing endpoint for the given (peerID, serverURL) pair.
+func (config *Config) GetEndpoint(peerID, serverURL string) *Endpoint {
+	for _, endpoint := range config.Endpoints {
+		if endpoint.URL == serverURL && endpoint.PeerID == peerID {
+			return endpoint
+		}
+	}
+
+	return nil
+}
+
+// DeleteEndpoint deletes any existing endpoint for the given (peerID, serverURL) pair.
+func (config *Config) DeleteEndpoint(peerID, endpointURL string) {
+	config.Endpoints = slices.DeleteFunc(config.Endpoints, func(e *Endpoint) bool {
+		return e.URL == endpointURL && e.PeerID == peerID
+	})
+	config.modified = true
+}
+
 // AddEndpoint adds a new server to the config, and generates a new, cleartext keypair for that server.
-// TODO: shouldn't default to a clear key store; possibly needs the key to be passed in.
-func (config *Config) AddEndpoint(peerID, serverURL string, storeType KeyStoreType) error {
+// This function will only replace an existing endpoint for the given (peerID, endpointURL) if force is true.
+func (config *Config) AddEndpoint(peerID, endpointURL string, storeType KeyStoreType, force bool) error {
+
+	// Check if there's an existing enrolment; abort if force isn't set.
+	existingEndpoint := config.GetEndpoint(peerID, endpointURL)
+	if existingEndpoint != nil {
+		if !force {
+			return ErrExistingEnrolment
+		}
+
+		config.DeleteEndpoint(peerID, endpointURL)
+	}
 
 	public, private, err := box.GenerateKey(rand.Reader)
 	if err != nil {
 		return err
 	}
 
-	endpoint := &Endpoint{
-		URL:       serverURL,
+	if !strings.HasSuffix(endpointURL, "/") {
+		endpointURL += "/"
+	}
+
+	newEndpoint := &Endpoint{
+		URL:       endpointURL,
 		PeerID:    peerID,
 		PublicKey: public[:],
 		Peers:     make(map[string]*Peer),
 	}
 
-	keyStore, err := NewKeyStore(endpoint, storeType, private[:])
+	keyStore, err := NewKeyStore(newEndpoint, storeType, private[:])
 	if err != nil {
 		return err
 	}
 
-	endpoint.PrivateKeyStores = []*PrivateKeyEnvelope{
+	newEndpoint.PrivateKeyStores = []*PrivateKeyEnvelope{
 		{Type: storeType, keyStore: keyStore},
 	}
 
-	err = endpoint.enrol()
+	err = newEndpoint.enrol()
 	if err != nil {
-		return fmt.Errorf("unable to enrol user at %s: %w", serverURL, err)
+		return fmt.Errorf("unable to enrol user at %s: %w", endpointURL, err)
 	}
 
-	config.Servers[serverURL] = endpoint
+	config.Endpoints = append(config.Endpoints, newEndpoint)
+	config.modified = true
 
-	if config.Properties.Server == "" {
-		config.Properties.Server = serverURL
-	}
 	return nil
 }
 
@@ -251,6 +292,8 @@ func (config *Config) Set(expression string) error {
 		return fmt.Errorf("unable to set %s: %w", namevalue[0], err)
 	}
 
+	config.modified = true
+
 	return nil
 }
 
@@ -259,7 +302,7 @@ func (config *Config) Set(expression string) error {
 func (config *Config) Marshal() ([]byte, error) {
 	var err error
 
-	for _, server := range config.Servers {
+	for _, server := range config.Endpoints {
 		for _, key := range server.PrivateKeyStores {
 			key.Properties, err = key.keyStore.Marshal()
 			if err != nil {
@@ -280,7 +323,7 @@ func (config *Config) Unmarshal(data []byte) error {
 		return fmt.Errorf("unable to parse config: %w", err)
 	}
 
-	for _, server := range config.Servers {
+	for _, server := range config.Endpoints {
 		for _, key := range server.PrivateKeyStores {
 			switch key.Type {
 			case KeyStoreClear:

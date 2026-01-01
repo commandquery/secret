@@ -13,6 +13,8 @@ var AutoEnrolOptions = []string{"true", "false", "approve", ""}
 var Config struct {
 	Store            string `split_words:"true"`
 	AutoEnrol        string `split_words:"true"` // See AutoEnrolOptions
+	SignatureSkew    int64  `split_words:"true" default:"5"`
+	ChallengeSize    int    `split_words:"true" default:"20"` // Incrementing by 1 *doubles* the complexity
 	PathPrefix       string `split_words:"true" default:"/"`
 	ServerConfigPath string `split_words:"true" default:"./server.json"`
 }

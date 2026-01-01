@@ -1,9 +1,14 @@
 package server
 
 import (
+	"encoding/json"
+	"log"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/commandquery/secrt"
 )
 
 // Peer is a peer who's enrolled in this server instance.
@@ -82,4 +87,38 @@ func (peer *Peer) AddMessage(msg *Message) {
 	}
 
 	peer.Messages = append(peer.Messages, msg)
+}
+
+func (server *SecretServer) handleGetPeer(w http.ResponseWriter, r *http.Request) {
+	if _, err := server.Authenticate(r); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	peerID := r.PathValue("peer")
+	if peerID == "" {
+		http.Error(w, "missing peer", http.StatusBadRequest)
+		return
+	}
+
+	user, ok := server.GetUser(peerID)
+	if !ok {
+		http.Error(w, "unknown peer", http.StatusNotFound)
+		return
+	}
+
+	peer := secrt.Peer{
+		Peer:      peerID,
+		PublicKey: user.PublicKey,
+	}
+
+	peerjs, err := json.Marshal(peer)
+	if err != nil {
+		log.Println("unable to marshal peer:", err)
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Add("Content-Type", "application/json")
+	_, _ = w.Write(peerjs)
 }

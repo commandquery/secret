@@ -29,7 +29,12 @@ func CmdPeerAdd(config *Config, endpoint *Endpoint, args []string) error {
 
 	peerId := args[0]
 	_, err := endpoint.AddPeer(peerId)
-	return err
+	if err != nil {
+		return err
+	}
+
+	config.modified = true
+	return nil
 }
 
 func CmdPeerRm(config *Config, endpoint *Endpoint, args []string) error {
@@ -44,6 +49,7 @@ func CmdPeerRm(config *Config, endpoint *Endpoint, args []string) error {
 	}
 
 	delete(endpoint.Peers, peerId)
+	config.modified = true
 	return nil
 }
 

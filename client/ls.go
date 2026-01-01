@@ -26,8 +26,7 @@ type lsEntry struct {
 	Size            int
 }
 
-// List the secrets on the server.
-// TODO: include -l option to get the long format
+// CmdLs lists the secrets waiting on the server.
 func CmdLs(config *Config, endpoint *Endpoint, args []string) error {
 
 	flags := flag.NewFlagSet("ls", flag.ContinueOnError)
@@ -38,8 +37,7 @@ func CmdLs(config *Config, endpoint *Endpoint, args []string) error {
 		return err
 	}
 
-	// FIXME: better handling of URL
-	endpointURL := endpoint.URL + "inbox"
+	endpointURL := endpoint.Path("inbox")
 
 	req, err := http.NewRequest("GET", endpointURL, nil)
 	if err != nil {
@@ -103,7 +101,7 @@ func CmdLs(config *Config, endpoint *Endpoint, args []string) error {
 
 func getLsEntry(config *Config, endpoint *Endpoint, msg *secrt.InboxMessage) *lsEntry {
 
-	lsEntry := &lsEntry{
+	entry := &lsEntry{
 		ID:              msg.ID.String(),
 		Timestamp:       time.Unix(msg.Timestamp, 0).Local(),
 		Sender:          msg.Sender,
@@ -118,30 +116,30 @@ func getLsEntry(config *Config, endpoint *Endpoint, msg *secrt.InboxMessage) *ls
 
 		// If the peer's unknown, just note it in the listing.
 		if errors.Is(err, ErrUnknownPeer) {
-			lsEntry.FileDescription = "unknown peer"
-			return lsEntry
+			entry.FileDescription = "unknown peer"
+			return entry
 		}
 
-		lsEntry.FileDescription = fmt.Sprintf("unable to decrypt metadata: %v", err)
-		return lsEntry
+		entry.FileDescription = fmt.Sprintf("unable to decrypt metadata: %v", err)
+		return entry
 	}
 
 	if err = json.Unmarshal(metajs, &metadata); err != nil {
-		lsEntry.FileDescription = fmt.Sprintf("unable to parse metadata: %v", err)
-		return lsEntry
+		entry.FileDescription = fmt.Sprintf("unable to parse metadata: %v", err)
+		return entry
 	}
 
-	lsEntry.Size = metadata.Size
-	lsEntry.Filename = metadata.Filename
-	lsEntry.Description = metadata.Description
+	entry.Size = metadata.Size
+	entry.Filename = metadata.Filename
+	entry.Description = metadata.Description
 
 	if metadata.Description != "" {
-		lsEntry.FileDescription = fmt.Sprintf("%s (%s)", metadata.Filename, metadata.Description)
+		entry.FileDescription = fmt.Sprintf("%s (%s)", metadata.Filename, metadata.Description)
 	} else {
-		lsEntry.FileDescription = fmt.Sprintf("%s", metadata.Filename)
+		entry.FileDescription = fmt.Sprintf("%s", metadata.Filename)
 	}
 
-	return lsEntry
+	return entry
 }
 
 func printJSInbox(config *Config, endpoint *Endpoint, inbox secrt.Inbox) error {

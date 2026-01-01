@@ -1,6 +1,8 @@
 package secrt
 
-import "github.com/google/uuid"
+import (
+	"github.com/google/uuid"
+)
 
 // MessageSizeLimit limits the size of individual messages.
 const MessageSizeLimit = 50 * 1024 // 100 KiB
@@ -45,4 +47,27 @@ type SendResponse struct {
 type Peer struct {
 	Peer      string `json:"peer"`
 	PublicKey []byte `json:"publicKey"`
+}
+
+type Challenge struct {
+	Version    int    `json:"version"`
+	Complexity int    `json:"complexity"`
+	Timestamp  int64  `json:"timestamp"`
+	Challenge  []byte `json:"challenge"`
+}
+
+// ChallengeRequest wraps a challenge object with a signature.
+// The entire signedChallenge must be returned along with the
+// result. The signature, timestamp and proof are then checked.
+// This enables stateless hashcash challenges, with nothing stored on the
+// server side.
+type ChallengeRequest struct {
+	Challenge []byte `json:"challenge"`
+}
+
+// ChallengeResponse is returned by the client. It contains both the
+// original, signed challenge, and the nonce.
+type ChallengeResponse struct {
+	Challenge []byte `json:"challenge"`
+	Nonce     uint64 `json:"nonce"`
 }

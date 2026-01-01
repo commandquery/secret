@@ -1,23 +1,26 @@
 # not-so-secret TODO
 
-- [X] private key is a structure containing key type
-- [X] use platform keystore to store passwords by default
-- [ ] send secrets to multiple people
-- [ ] deploy as an actual service (kill the version running at emersion)
-- [ ] support for multiple servers (eg, -s server)
-- [ ] server-side struct mutations aren't generally protected by a mutex.
-- [ ] saving client or server config should be atomic
-  - [ ] write to a temp file then move it.
+## Client
 
-## Commercial & Public Stuff
+## Server
 
 - [ ] postgres backend
-- [ ] invite mechanism. - invite specific users, invite an entire domain
-- [ ] email invite verification
+- [ ] email enrolment verification (if required and available with server config)
+- [ ] secrt.io website.
+- [ ] deploy as an actual service (kill the version running at emersion)
+- [ ] invite emails
+  - need to be able to invite users with a plan (encode this in a signed invite url?)
+  - only send one invite email per peer per 24 hours
+- [ ] quota support: daily limits, message size limits, timezone, secret linger time
 - [ ] some kind of usage limits / AUP / rate limiting - a byte limit would satisfy my problem with nasty material
 - [ ] make available in homebrew
 - [ ] web site
-- [ ] share with mark.dorset@... (SECRET_AUTO_ENROL="invite"), richard@, noel@, ... what about the pgpkg guy?
+- [ ] share with mark.dorset@, richard@, noel@, stephan@ ... what about the pgpkg guy?
+
+## Future
+
+- [ ] user-friendly support for multiple servers (eg, list endpoints and select one)
+- [ ] some way to share config between devices (eg using device peer to share private key)
 
 ## Done
 
@@ -65,3 +68,14 @@
 - [X] `secrt peer rm user@example` remove peer
 - [X] `secrt peer add user@example` explicitly add a peer
 - [X] GET /peer/{peer} should return JSON rather than just the public key (eg, screen name)
+- [X] private key is a structure containing key type
+- [X] use platform keystore to store passwords by default
+- [X] platform "User" field needs to include the peerId as well as the server ID (since we can have different configs in -f)
+- [X] in "secrt send", the filename should come *before* the peer address - so we can send to multiple peers
+- [X] send secrets to multiple people
+- [X] "secrt invite user@domain" - sends an email with download instructions
+- [X] saving client config should be atomic / write to a temp file then move it.
+- [X] enrolment for same peer ID and same server should require --force
+- [X] enrolment should use hashcash to limit mass enrolment
+- [X] verify the nonce headers on the server size
+- [X] spend more time ensuring that hashcash is really working properly

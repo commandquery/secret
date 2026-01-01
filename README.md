@@ -1,22 +1,17 @@
-Secret: Securely exchange secrets with your peers.
+# secret
 
-Secret is a simple CLI command for exchanging sensitive data with your peers using
-end-to-end encryption. Encrypted messages are stored temporarily on a server until
-the peer picks them up.
+This is the Git documentation for secret. Usage can be found in [USAGE.md].
 
-All messages are encrypted with your private key. The server can never read your messages.
+## Enrolment Challenge
 
-General usage:
+Most HTTP endpoints are authenticated, but the enrolment API is not, and this is a problem
+because an obvious way to share CSAM is just to enrol a bunch of accounts and send partial
+messages over them, basically abusing the free tier.
 
-    secret [options] command ...
+To avoid this, we create friction by requiring a HashCash challenge on the public API endpoints.
 
-Options:
+The enrolment process works as follows:
 
-    -f <secretdir>                - store (and retrieve) configuration from this directory
-
-Commands:
-
-    secret enrol [--force] <id> <server> - create a key pair, and send the public key to the given Secret server.
-    secret share <peerID> [file]         - share file (or stdin) to the given peer.
-    secret ls                            - list messages waiting for you
-    secret get <msgid>                   - print the message with the given ID to stdout.
+- Client generates a (public, private) keypair
+- Requests a challenge by posing the public key to the server
+- Server responds with 

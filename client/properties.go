@@ -8,8 +8,8 @@ import (
 // Properties is a set of configuration properties used to control
 // the behaviour of the client.
 type Properties struct {
-	Server      string `json:"server"`      // The default server to use
-	AcceptPeers bool   `json:"acceptPeers"` // Automatically accept new peers
+	DefaultEndpoint int  `json:"defaultEndpoint"` // The default server to use
+	AcceptPeers     bool `json:"acceptPeers"`     // Automatically accept new peers
 }
 
 func (p *Properties) Set(name string, value string) error {
@@ -17,7 +17,7 @@ func (p *Properties) Set(name string, value string) error {
 
 	switch name {
 	case "server":
-		p.Server = value
+		p.DefaultEndpoint, err = strconv.Atoi(value)
 	case "acceptPeers":
 		p.AcceptPeers, err = strconv.ParseBool(value)
 	default:

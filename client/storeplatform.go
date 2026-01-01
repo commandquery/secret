@@ -10,7 +10,7 @@ import (
 
 type PlatformKeyStore struct {
 	Service    string `json:"service"` // Always "secrt.io"
-	User       string `json:"user"`    // Always the URL of the endpoint
+	User       string `json:"user"`    // Endpoint URL including peer ID
 	privateKey []byte // Cached (unsealed) private key, never marshalled/unmarshalled
 }
 
@@ -20,7 +20,7 @@ func NewPlatformKeyStore(endpoint *Endpoint, privateKey []byte) (*PlatformKeySto
 
 	keystore := &PlatformKeyStore{
 		Service:    "secrt.io",
-		User:       endpoint.URL,
+		User:       endpoint.PeerID + ":" + endpoint.URL,
 		privateKey: privateKey,
 	}
 
