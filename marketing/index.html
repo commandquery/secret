@@ -142,61 +142,63 @@
     <!-- Hero Section -->
     <header class="mb-20">
       <h1 class="text-4xl md:text-5xl font-semibold font-mono mb-6 tracking-tight">secrt<span class="text-gray-400">.io</span></h1>
-      <p class="text-xl md:text-2xl text-gray-600 dark:text-gray-400 leading-relaxed mb-6">
-        A simple command-line utility that helps technical folk securely share secrets and config files with peers, coworkers and devices using end-to-end encryption.
-      </p>
-      <div class="space-y-4 text-gray-600 dark:text-gray-400">
-        <p>
-          <code class="font-mono text-sm bg-gray-200 dark:bg-gray-800 px-2 py-1 rounded">secrt</code> uses
-          <strong class="text-gray-900 dark:text-gray-200">X25519-XSalsa20-Poly1305</strong> (NaCl box) public-key authenticated end-to-end encryption via
-          <a href="https://pkg.go.dev/golang.org/x/crypto/nacl/box" class="text-blue-600 dark:text-blue-400 hover:underline font-mono text-sm">golang.org/x/crypto/nacl/box</a>.
-        </p>
-        <p>
-          <code class="font-mono text-sm bg-gray-200 dark:bg-gray-800 px-2 py-1 rounded">secrt</code> uses a server to share public keys and forward messages, but your private key never leaves your device, and the server is unable to read your messages.
-        </p>
-        <p>
-          <code class="font-mono text-sm bg-gray-200 dark:bg-gray-800 px-2 py-1 rounded">secrt</code> is for sharing secrets; it's not a file-sharing service. Shared secrets are limited to 50KB and are retained for a maximum of 24 hours.
-        </p>
-      </div>
+        <h2 class="text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100">Share secrets from the command line.</h2>
+
+        <div class="terminal max-w-2xl">
+            <div class="terminal-header">
+                <div class="terminal-dot bg-red-500"></div>
+                <div class="terminal-dot bg-yellow-500"></div>
+                <div class="terminal-dot bg-green-500"></div>
+            </div>
+            <div class="terminal-body">
+                <div class="prompt">
+                    <span id="animated-command" class="command"></span><span id="cursor" class="typing-cursor"></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-8 flex flex-wrap gap-2">
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">tokens</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">passwords</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">api keys</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">config files</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">private keys</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">certificates</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">ssh keys</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">credentials</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">PATs</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">license keys</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">reset links</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">connection strings</span>
+            <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">session cookies</span>
+        </div>
     </header>
 
-    <!-- Examples Section -->
+
     <section class="mb-20">
-      <h2 class="text-2xl font-semibold mb-6 text-gray-900 dark:text-gray-100">Send secrets from your command line.</h2>
+        <h2 class="text-2xl font-semibold mb-8 text-gray-900 dark:text-gray-100">Features</h2>
 
-      <div class="terminal max-w-2xl">
-        <div class="terminal-header">
-          <div class="terminal-dot bg-red-500"></div>
-          <div class="terminal-dot bg-yellow-500"></div>
-          <div class="terminal-dot bg-green-500"></div>
-        </div>
-        <div class="terminal-body">
-          <div class="prompt">
-            <span id="animated-command" class="command"></span><span id="cursor" class="typing-cursor"></span>
-          </div>
-        </div>
+        <div class="space-y-4 text-gray-600 dark:text-gray-400">
+        <ul>
+            <li class="pb-2">
+              <strong class="text-gray-900 dark:text-gray-200">Secure.</strong> X25519-XSalsa20-Poly1305 public-key authenticated end-to-end encryption using
+              <a href="https://pkg.go.dev/golang.org/x/crypto/nacl/box" class="text-blue-600 dark:text-blue-400 hover:underline font-mono text-sm">golang.org/x/crypto/nacl/box</a>.
+            </li>
+            <li class="pb-2">
+                <strong class="text-gray-900 dark:text-gray-200">Convenient.</strong> An integrated public key server and inbox make it easy to share private data with less hassle.
+            </li>
+            <li>
+                <strong class="text-gray-900 dark:text-gray-200">Open Source.</strong> Client and server code is Apache-2.0 licensed and available from <a class="download-link" href="https://github.com/commandquery/secrt">GitHub</a>.
+            </li>
+        </ul>
       </div>
 
-      <div class="mt-8 flex flex-wrap gap-2">
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">tokens</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">passwords</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">api keys</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">config files</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">private keys</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">certificates</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">ssh keys</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">credentials</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">PATs</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">license keys</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">reset links</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">connection strings</span>
-        <span class="px-3 py-1 bg-gray-200 dark:bg-gray-800 rounded-full text-sm font-mono">session cookies</span>
-      </div>
+    <!-- Examples Section -->
     </section>
 
     <!-- How to Use Section -->
     <section class="mb-20">
-      <h2 class="text-2xl font-semibold mb-8 text-gray-900 dark:text-gray-100">How to use it</h2>
+      <h2 class="text-2xl font-semibold mb-8 text-gray-900 dark:text-gray-100">Examples</h2>
 
       <div class="space-y-6">
         <!-- Enrol -->
@@ -404,6 +406,33 @@ cbf061e6 alice@example.com           859 10:01:41   README.md</div>
           <button disabled class="mt-6 w-full py-2 px-4 bg-gray-200 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm font-medium rounded-lg cursor-default">Default</button>
         </div>
 
+          <!-- Ops Plan -->
+          <div class="border-2 border-blue-500 dark:border-blue-400 rounded-lg p-6 relative flex flex-col">
+              <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-xs font-medium px-3 py-1 rounded-full">Best</div>
+              <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Ops</h3>
+              <p class="text-3xl font-semibold mb-1 text-gray-900 dark:text-gray-100">$50</p>
+              <p class="text-sm text-gray-500 mb-6">/year</p>
+              <ul class="space-y-3 text-gray-600 dark:text-gray-400 text-sm flex-1">
+                  <li class="flex items-center gap-2">
+                      <span class="text-green-500">&#10003;</span>
+                      Unlimited invites
+                  </li>
+                  <li class="flex items-center gap-2">
+                      <span class="text-green-500">&#10003;</span>
+                      1000 secrets/day
+                  </li>
+                  <li class="flex items-center gap-2">
+                      <span class="text-green-500">&#10003;</span>
+                      Max secret size 250KB
+                  </li>
+                  <li class="flex items-center gap-2">
+                      <span class="text-green-500">&#10003;</span>
+                      Unlimited storage (defaults to 24h)
+                  </li>
+              </ul>
+              <button class="mt-6 w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors">Upgrade</button>
+          </div>
+
         <!-- Pro Plan -->
         <div class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 flex flex-col">
           <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Pro</h3>
@@ -430,32 +459,6 @@ cbf061e6 alice@example.com           859 10:01:41   README.md</div>
           <button class="mt-6 w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors">Upgrade</button>
         </div>
 
-        <!-- Ops Plan -->
-        <div class="border-2 border-blue-500 dark:border-blue-400 rounded-lg p-6 relative flex flex-col">
-          <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-xs font-medium px-3 py-1 rounded-full">Best</div>
-          <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Ops</h3>
-          <p class="text-3xl font-semibold mb-1 text-gray-900 dark:text-gray-100">$50</p>
-          <p class="text-sm text-gray-500 mb-6">/year</p>
-          <ul class="space-y-3 text-gray-600 dark:text-gray-400 text-sm flex-1">
-            <li class="flex items-center gap-2">
-              <span class="text-green-500">&#10003;</span>
-              Unlimited invites
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="text-green-500">&#10003;</span>
-              1000 secrets/day
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="text-green-500">&#10003;</span>
-              Max secret size 250KB
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="text-green-500">&#10003;</span>
-              Unlimited storage (defaults to 24h)
-            </li>
-          </ul>
-          <button class="mt-6 w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors">Upgrade</button>
-        </div>
       </div>
     </section>
 
@@ -502,38 +505,34 @@ cbf061e6 alice@example.com           859 10:01:41   README.md</div>
 
     // Animated terminal typing
     const commands = [
-      { file: 'token.yaml', email: 'coworker@example.com' },
-      { file: 'api-key.txt', email: 'teammate@company.io' },
-      { file: '.env', email: 'dev@startup.co' },
-      { file: 'id_rsa', email: 'peer@example.com' },
-      { file: 'license.key', email: 'housemate@home.net' },
-      { file: 'credentials.json', email: 'alice@example.com' },
-      { file: 'db-password.txt', email: 'ops@infra.io' },
-      { file: 'cert.pem', email: 'bob@company.com' },
-      { file: 'session.cookie', email: 'friend@example.org' },
-      { file: 'connection-string.txt', email: 'admin@service.io' }
+      'secrt send token.yaml coworker@example.com',
+      'secrt send api-key.txt teammate@company.io',
+      'gentoken | secrt send user@work.com',
+      'secrt send .env dev@startup.co',
+      'secrt send id_rsa peer@example.com',
+      'secrt send license.key housemate@home.net',
+      'secrt send credentials.json alice@example.com',
+      'secrt send db-password.txt ops@infra.io',
+      'secrt send cert.pem bob@company.com',
+      'secrt send session.cookie friend@example.org',
+      'secrt send connection-string.txt admin@service.io',
     ];
 
     const commandElement = document.getElementById('animated-command');
-    const cursorElement = document.getElementById('cursor');
     let commandIndex = 0;
 
     async function typeCommand(text) {
       commandElement.textContent = '';
       for (let i = 0; i < text.length; i++) {
         commandElement.textContent += text[i];
-        await new Promise(resolve => setTimeout(resolve, 40 + Math.random() * 30));
+        await new Promise(resolve => setTimeout(resolve, Math.random() * 35));
       }
     }
 
     async function animateCommands() {
       while (true) {
-        const cmd = commands[commandIndex];
-        const fullCommand = `secrt send ${cmd.file} ${cmd.email}`;
-
-        await typeCommand(fullCommand);
+        await typeCommand(commands[commandIndex]);
         await new Promise(resolve => setTimeout(resolve, 2000));
-
         commandIndex = (commandIndex + 1) % commands.length;
       }
     }
