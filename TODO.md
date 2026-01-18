@@ -2,15 +2,32 @@
 
 ## Client
 
+- [X] client should always print the full UUID. you can optionally just use the prefix.
+- [ ] enrolment workflow 
+  - [ ] enrolment messages (to the CLI) should come from the server!
+    - allows custom welcome messages for server owners
+  - [ ] send email during enrolment.
+    - move the smtp config into server config
+    - send a proper email with an enrolment link
+    - need a server page to accept the enrolment link.
+  - [ ] client should JSON to server with public key instead of binary (allows extension later)
+  - [ ] handleEnrol should return server public key as JSON instead of binary (allows extension later)
+  - [ ] clicking on email agrees to T&Cs -OR- does the download/license cover it?
+- [ ] how to prevent unwanted messages / spam? block user until authorised? block/report address?
+  - [ ] require invite
+  - [ ] needs block lists
+
+## Website
+
+- [ ] remove google fonts and tailwind cdn / privacy
+
 ## Server
 
-- [ ] postgres backend
+- [X] postgres backend
+- [ ] need to automatically purge old messages from SQL
 - [ ] email enrolment verification (if required and available with server config)
 - [ ] secrt.io website.
 - [ ] deploy as an actual service (kill the version running at emersion)
-- [ ] invite emails
-  - need to be able to invite users with a plan (encode this in a signed invite url?)
-  - only send one invite email per peer per 24 hours
 - [ ] quota support: daily limits, message size limits, timezone, secret linger time
 - [ ] some kind of usage limits / AUP / rate limiting - a byte limit would satisfy my problem with nasty material
 - [ ] make available in homebrew

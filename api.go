@@ -13,7 +13,7 @@ type Inbox struct {
 }
 
 type InboxMessage struct {
-	ID        uuid.UUID `json:"id"`
+	Message   uuid.UUID `json:"id"`
 	Sender    string    `json:"sender"`
 	Timestamp int64     `json:"timestamp"`
 	Size      int       `json:"size"`     // encrypted size. used as a hint.

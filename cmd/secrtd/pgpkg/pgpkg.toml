@@ -1,0 +1,8 @@
+Package = "github.com/commandquery/secrt"
+Schemas = [ "secrt" ]
+Migrations = [
+    "schema/server.sql",
+    "schema/peer.sql",
+    "schema/hostname.sql",
+    "schema/message.sql"
+]

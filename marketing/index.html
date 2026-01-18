@@ -32,110 +32,24 @@
       }
     }
   </script>
-  <style>
-    .terminal {
-      background: #1a1b26;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.4);
-    }
-    .terminal-header {
-      background: #24283b;
-      padding: 12px 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .terminal-dot {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-    }
-    .terminal-body {
-      padding: 20px;
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 14px;
-      line-height: 1.6;
-      color: #a9b1d6;
-      min-height: 60px;
-    }
-    .prompt::before {
-      content: '$ ';
-      color: #9ece6a;
-    }
-    .command {
-      color: #7dcfff;
-    }
-    .output {
-      color: #787c99;
-      padding-left: 0;
-    }
-    .typing-cursor {
-      display: inline-block;
-      width: 8px;
-      height: 18px;
-      background: #a9b1d6;
-      margin-left: 2px;
-      animation: blink 1s step-end infinite;
-      vertical-align: text-bottom;
-    }
-    @keyframes blink {
-      50% { opacity: 0; }
-    }
-    .tab-button {
-      transition: all 0.2s ease;
-    }
-    .tab-button.active {
-      border-bottom: 2px solid currentColor;
-    }
-    .download-tab {
-      display: none;
-    }
-    .download-tab.active {
-      display: block;
-    }
-    /* Smooth transitions for dark mode */
-    html {
-      transition: background-color 0.3s, color 0.3s;
-    }
-    /* Copy button */
-    .copy-row {
-      display: flex;
-      align-items: flex-start;
-      gap: 12px;
-    }
-    .copy-row .prompt {
-      flex: 1;
-      min-width: 0;
-      word-break: break-all;
-    }
-    .copy-btn {
-      flex-shrink: 0;
-      padding: 4px;
-      border-radius: 4px;
-      color: #787c99;
-      background: transparent;
-      border: none;
-      cursor: pointer;
-      transition: color 0.2s, background 0.2s;
-    }
-    .copy-btn:hover {
-      color: #a9b1d6;
-      background: #24283b;
-    }
-    .copy-btn.copied {
-      color: #9ece6a;
-    }
-    .download-link {
-      color: #7dcfff;
-      text-decoration: none;
-    }
-    .download-link:hover {
-      text-decoration: underline;
-    }
-  </style>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body class="bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100 font-sans antialiased">
+
+  <!-- Navigation -->
+  <nav class="border-b border-gray-200 dark:border-gray-800">
+    <div class="max-w-4xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="index.html" class="text-xl font-semibold font-mono tracking-tight">secrt<span class="text-gray-400">.io</span></a>
+      <div class="flex items-center gap-6">
+        <a href="about.html" class="nav-link text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">About</a>
+        <a href="docs.html" class="nav-link text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">Docs</a>
+        <a href="privacy.html" class="nav-link text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100">Privacy</a>
+        <a href="https://github.com/commandquery/secrt" class="nav-link text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100" aria-label="GitHub">
+          <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        </a>
+      </div>
+    </div>
+  </nav>
 
   <div class="max-w-4xl mx-auto px-6 py-16">
 
@@ -185,7 +99,7 @@
               <a href="https://pkg.go.dev/golang.org/x/crypto/nacl/box" class="text-blue-600 dark:text-blue-400 hover:underline font-mono text-sm">golang.org/x/crypto/nacl/box</a>.
             </li>
             <li class="pb-2">
-                <strong class="text-gray-900 dark:text-gray-200">Convenient.</strong> An integrated public key server and inbox make it easy to share private data with less hassle.
+                <strong class="text-gray-900 dark:text-gray-200">Convenient.</strong> A public key server and inbox make it hassle free to share secrets.
             </li>
             <li>
                 <strong class="text-gray-900 dark:text-gray-200">Open Source.</strong> Client and server code is Apache-2.0 licensed and available from <a class="download-link" href="https://github.com/commandquery/secrt">GitHub</a>.
@@ -260,9 +174,9 @@
             </div>
             <div class="terminal-body">
               <div class="prompt"><span class="command">secrt ls</span></div>
-              <div class="output" style="font-size: 13px;">
+              <div class="output" style="font-size: 13px;"><pre>
 ID       Peer                       Size Sent       Description
-cbf061e6 alice@example.com           859 10:01:41   README.md</div>
+cbf061e6 alice@example.com           859 10:01:41   README.md</pre></div>
             </div>
           </div>
         </div>
@@ -378,88 +292,105 @@ cbf061e6 alice@example.com           859 10:01:41   README.md</div>
 
     <!-- Pricing Section -->
     <section class="mb-20">
-      <h2 class="text-2xl font-semibold mb-8 text-gray-900 dark:text-gray-100">Pricing</h2>
-      <div class="grid md:grid-cols-3 gap-6">
-        <!-- Free Plan -->
-        <div class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 flex flex-col">
-          <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Free</h3>
+      <h2 class="text-2xl font-semibold mb-4 text-gray-900 dark:text-gray-100">Pricing</h2>
+      <p class="text-gray-600 dark:text-gray-400 mb-8">secrt.io is free to use, but it's even easier with a private server. Automatically
+        accept keys from peers in the same domain, store larger secrets, and send them more often. Since it's a CLI tool, you can incorporate
+        it into your workflows. Never copy a private key again!
+      </p>
+      <div class="pricing-grid">
+        <!-- Community Plan -->
+        <div class="pricing-card pricing-card-side border border-gray-200 dark:border-gray-800 rounded-lg p-6 flex flex-col bg-gray-50 dark:bg-gray-950">
+          <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Self Hosted</h3>
           <p class="text-3xl font-semibold mb-1 text-gray-900 dark:text-gray-100">$0</p>
-          <p class="text-sm text-gray-500 mb-6">&nbsp;</p>
+          <p class="text-sm text-gray-500 mb-6">Run your own server!</p>
           <ul class="space-y-3 text-gray-600 dark:text-gray-400 text-sm flex-1">
             <li class="flex items-center gap-2">
               <span class="text-green-500">&#10003;</span>
-              Unlimited invites
+              Run on your own infra
+            </li>
+              <li class="flex items-center gap-2">
+                  <span class="text-green-500">&#10003;</span>
+                  Make your own rules!
+              </li>
+            <li class="flex items-center gap-2">
+              <span class="text-green-500">&#10003;</span>
+              Unlimited secrets
             </li>
             <li class="flex items-center gap-2">
               <span class="text-green-500">&#10003;</span>
-              10 secrets/day
+              Configurable Secret Size
             </li>
             <li class="flex items-center gap-2">
               <span class="text-green-500">&#10003;</span>
-              Max secret size 10KB
-            </li>
-            <li class="flex items-center gap-2">
-              <span class="text-green-500">&#10003;</span>
-              4 hours storage per secret
+              Configurable Expiry
             </li>
           </ul>
-          <button disabled class="mt-6 w-full py-2 px-4 bg-gray-200 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm font-medium rounded-lg cursor-default">Default</button>
+          <button class="mt-6 w-full py-2 px-4 bg-gray-700 hover:bg-gray-600 text-white text-sm font-medium rounded-lg transition-colors">Docs</button>
         </div>
 
-          <!-- Ops Plan -->
-          <div class="border-2 border-blue-500 dark:border-blue-400 rounded-lg p-6 relative flex flex-col">
-              <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-xs font-medium px-3 py-1 rounded-full">Best</div>
-              <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Ops</h3>
-              <p class="text-3xl font-semibold mb-1 text-gray-900 dark:text-gray-100">$50</p>
-              <p class="text-sm text-gray-500 mb-6">/year</p>
-              <ul class="space-y-3 text-gray-600 dark:text-gray-400 text-sm flex-1">
-                  <li class="flex items-center gap-2">
-                      <span class="text-green-500">&#10003;</span>
-                      Unlimited invites
-                  </li>
-                  <li class="flex items-center gap-2">
-                      <span class="text-green-500">&#10003;</span>
-                      1000 secrets/day
-                  </li>
-                  <li class="flex items-center gap-2">
-                      <span class="text-green-500">&#10003;</span>
-                      Max secret size 250KB
-                  </li>
-                  <li class="flex items-center gap-2">
-                      <span class="text-green-500">&#10003;</span>
-                      Unlimited storage (defaults to 24h)
-                  </li>
-              </ul>
-              <button class="mt-6 w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors">Upgrade</button>
-          </div>
-
-        <!-- Pro Plan -->
-        <div class="border border-gray-200 dark:border-gray-800 rounded-lg p-6 flex flex-col">
-          <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Pro</h3>
-          <p class="text-3xl font-semibold mb-1 text-gray-900 dark:text-gray-100">$10</p>
-          <p class="text-sm text-gray-500 mb-6">/year</p>
+        <!-- Private Server -->
+        <div class="pricing-card pricing-card-center border-2 border-blue-500 dark:border-blue-400 rounded-lg p-6 relative flex flex-col bg-gray-50 dark:bg-gray-950">
+          <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-500 text-white text-xs font-medium px-3 py-1 rounded-full">Smort!</div>
+          <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Private Server</h3>
+          <p class="text-3xl font-semibold mb-1 text-gray-900 dark:text-gray-100">$49<span class="text-sm">USD/yr</span></p>
+          <p class="text-sm text-gray-500 mb-6">Do it! Do it now!</p>
           <ul class="space-y-3 text-gray-600 dark:text-gray-400 text-sm flex-1">
             <li class="flex items-center gap-2">
               <span class="text-green-500">&#10003;</span>
-              Unlimited invites
+              BYO domain / domain.secrt.io
+            </li>
+              <li class="flex items-center gap-2">
+                  <span class="text-green-500">&#10003;</span>
+                  100 users
+              </li>
+            <li class="flex items-center gap-2">
+              <span class="text-green-500">&#10003;</span>
+              Automatic public key sync
             </li>
             <li class="flex items-center gap-2">
               <span class="text-green-500">&#10003;</span>
-              100 secrets/day
+              10k secrets/week/server
             </li>
             <li class="flex items-center gap-2">
               <span class="text-green-500">&#10003;</span>
-              Max secret size 50KB
+              Max secret size 250KB
             </li>
             <li class="flex items-center gap-2">
               <span class="text-green-500">&#10003;</span>
-              24 hours storage per secret
+              Secrets expire after 72 hours
             </li>
           </ul>
           <button class="mt-6 w-full py-2 px-4 bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium rounded-lg transition-colors">Upgrade</button>
         </div>
 
+        <!-- Public Server -->
+        <div class="pricing-card pricing-card-side border border-gray-200 dark:border-gray-800 rounded-lg p-6 flex flex-col bg-gray-50 dark:bg-gray-950">
+          <h3 class="text-lg font-semibold mb-2 text-gray-900 dark:text-gray-100">Public Server</h3>
+          <p class="text-3xl font-semibold mb-1 text-gray-900 dark:text-gray-100">$0</p>
+          <p class="text-sm text-gray-500 mb-6">Join the party!</p>
+          <ul class="space-y-3 text-gray-600 dark:text-gray-400 text-sm flex-1">
+            <li class="flex items-center gap-2">
+              <span class="text-green-500">&#10003;</span>
+              25 secrets/week
+            </li>
+              <li class="flex items-center gap-2">
+                  <span class="text-green-500">&#10003;</span>
+                  20 invites/day
+              </li>
+            <li class="flex items-center gap-2">
+              <span class="text-green-500">&#10003;</span>
+              Max secret size 5KB
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="text-green-500">&#10003;</span>
+              Secrets expire after 4 hours
+            </li>
+          </ul>
+          <button disabled class="mt-6 w-full py-2 px-4 bg-gray-200 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-sm font-medium rounded-lg cursor-default">Default</button>
+        </div>
+
       </div>
+      <p class="text-center text-gray-500 mt-8">Please contact <a href="mailto:sales@secrt.io" class="text-blue-600 dark:text-blue-400 hover:underline">sales@secrt.io</a> for specialised pricing.</p>
     </section>
 
     <!-- Footer -->
@@ -469,76 +400,7 @@ cbf061e6 alice@example.com           859 10:01:41   README.md</div>
 
   </div>
 
-  <script>
-    // Tab switching
-    const tabButtons = document.querySelectorAll('.tab-button');
-    const tabPanels = document.querySelectorAll('.download-tab');
-
-    tabButtons.forEach(button => {
-      button.addEventListener('click', () => {
-        const tabId = button.dataset.tab;
-
-        tabButtons.forEach(btn => btn.classList.remove('active', 'text-gray-900', 'dark:text-gray-100'));
-        tabButtons.forEach(btn => btn.classList.add('text-gray-500'));
-        button.classList.add('active', 'text-gray-900', 'dark:text-gray-100');
-        button.classList.remove('text-gray-500');
-
-        tabPanels.forEach(panel => panel.classList.remove('active'));
-        document.getElementById(`tab-${tabId}`).classList.add('active');
-      });
-    });
-
-    // Copy to clipboard
-    const copyButtons = document.querySelectorAll('.copy-btn');
-    copyButtons.forEach(button => {
-      button.addEventListener('click', async () => {
-        const command = button.dataset.command;
-        await navigator.clipboard.writeText(command);
-        button.classList.add('copied');
-        button.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>';
-        setTimeout(() => {
-          button.classList.remove('copied');
-          button.innerHTML = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>';
-        }, 2000);
-      });
-    });
-
-    // Animated terminal typing
-    const commands = [
-      'secrt send token.yaml coworker@example.com',
-      'secrt send api-key.txt teammate@company.io',
-      'gentoken | secrt send user@work.com',
-      'secrt send .env dev@startup.co',
-      'secrt send id_rsa peer@example.com',
-      'secrt send license.key housemate@home.net',
-      'secrt send credentials.json alice@example.com',
-      'secrt send db-password.txt ops@infra.io',
-      'secrt send cert.pem bob@company.com',
-      'secrt send session.cookie friend@example.org',
-      'secrt send connection-string.txt admin@service.io',
-    ];
-
-    const commandElement = document.getElementById('animated-command');
-    let commandIndex = 0;
-
-    async function typeCommand(text) {
-      commandElement.textContent = '';
-      for (let i = 0; i < text.length; i++) {
-        commandElement.textContent += text[i];
-        await new Promise(resolve => setTimeout(resolve, Math.random() * 35));
-      }
-    }
-
-    async function animateCommands() {
-      while (true) {
-        await typeCommand(commands[commandIndex]);
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        commandIndex = (commandIndex + 1) % commands.length;
-      }
-    }
-
-    animateCommands();
-  </script>
+  <script src="main.js"></script>
 
 </body>
 </html>

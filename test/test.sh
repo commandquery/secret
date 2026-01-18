@@ -3,29 +3,41 @@
 # TODO
 # Write assertions for the test results!
 
-#
-# Basic setup and start server
-#
-PATH=.:$PATH
+# Make sure cgo doesn't get used.
+export CGO_ENABLED=0
 
-set -e
+# PG settings for testing
+export PGDATABASE=st
+export PGSSLMODE=disable
+
+dropdb $PGDATABASE
+createdb $PGDATABASE
+
+set -ex
 
 cleanup() {
     kill "$server" 2>/dev/null
 }
 trap cleanup EXIT
 
+# Build the binaries into the current directory and
+# make them accessible to the rest of the script.
+PATH=.:$PATH
 go build -o secrt ../cmd/secrt
+go build -o secrtd ../cmd/secrtd
 go test ..
 
 rm -f *.json
 
 # Use a small challenge size to keep tests snappy.
 export SECRT_CHALLENGE_SIZE=10
-secrt server &
+
+secrtd add localhost
+
+secrtd &
 server=$!
 
-sleep 1
+sleep 2
 
 #
 # Enrol alice and bob
@@ -46,7 +58,24 @@ echo "message ID: $MSGID"
 #
 echo "--- secrt get"
 MSG=$(secrt -c bob.json get $MSGID)
-echo $MSG
+echo "get message $MSG"
+if [ "$MSG" != "hello" ]; then
+  echo "expected hello" 1>&2
+  exit 1
+fi
+
+#
+# Use the short ID
+#
+echo "--- secrt get short"
+SHORTID=${MSGID:0:8}
+echo "get message $SHORTID"
+MSG=$(secrt -c bob.json get $SHORTID)
+if [ "$MSG" != "hello" ]; then
+  echo "expected hello" 1>&2
+  exit 1
+fi
+
 
 #
 # Send a named file from bob to alice.
@@ -105,7 +134,18 @@ if secrt -c bob.json get $MSGID 2> /dev/null; then
   exit 1
 fi
 
+#
+# Bad message ID
+#
 if secrt -c bob.json rm xxxxxxxx 2> /dev/null; then
+  echo "secrt rm should have failed"
+  exit 1
+fi
+
+#
+# Valid but missing message ID
+#
+if secrt -c bob.json rm 91743420-7FFA-491F-B64B-02B88873B8F7 2> /dev/null; then
   echo "secrt rm should have failed"
   exit 1
 fi
