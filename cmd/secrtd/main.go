@@ -13,8 +13,8 @@ func addServerCmd(hostname string) error {
 
 	ctx := context.Background()
 
-	_, err := PGXPool.Exec(ctx, "insert into secrt.server (server, private_box_key, public_box_key, private_sign_key, public_sign_key) values ($1, $2, $3, $4, $5)",
-		server.Server, server.PrivateBoxKey, server.PublicBoxKey, server.PrivateSignKey, server.PublicSignKey)
+	_, err := PGXPool.Exec(ctx, "insert into secrt.server (server, secret_box_key, private_box_key, public_box_key, private_sign_key, public_sign_key) values ($1, $2, $3, $4, $5, $6)",
+		server.Server, server.SecretBoxKey, server.PrivateBoxKey, server.PublicBoxKey, server.PrivateSignKey, server.PublicSignKey)
 	if err != nil {
 		return fmt.Errorf("unable to add server: %w", err)
 	}

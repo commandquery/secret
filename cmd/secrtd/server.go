@@ -26,10 +26,11 @@ var ErrUnknownMessageID error = errors.New("unknown message ID")
 
 type SecretServer struct {
 	Server         uuid.UUID
-	PrivateBoxKey  []byte `json:"privateBoxKey"`
-	PublicBoxKey   []byte `json:"publicBoxKey"`
-	PrivateSignKey []byte `json:"privateSignKey"`
-	PublicSignKey  []byte `json:"publicSignKey"`
+	SecretBoxKey   []byte
+	PrivateBoxKey  []byte
+	PublicBoxKey   []byte
+	PrivateSignKey []byte
+	PublicSignKey  []byte
 }
 
 // NewSecretServer returns a new SecretServer with a unique private and public key.
@@ -40,9 +41,14 @@ func NewSecretServer() *SecretServer {
 	}
 
 	publicSignKey, privateSignKey, err := sign.GenerateKey(rand.Reader)
+	var secretBoxKey [32]byte
+	if _, err := rand.Read(secretBoxKey[:]); err != nil {
+		panic(err)
+	}
 
 	server := &SecretServer{
 		Server:         uuid.New(),
+		SecretBoxKey:   secretBoxKey[:],
 		PrivateBoxKey:  privateBoxKey[:],
 		PublicBoxKey:   publicBoxKey[:],
 		PrivateSignKey: privateSignKey[:],
@@ -55,10 +61,10 @@ func NewSecretServer() *SecretServer {
 // GetSecretServer returns a secret server based on the given hostname.
 func GetSecretServer(hostname string) (*SecretServer, error) {
 	ctx := context.Background()
-	row := PGXPool.QueryRow(ctx, "select server, private_box_key, public_box_key, private_sign_key, public_sign_key from secrt.hostname join secrt.server using (server) where hostname=$1", hostname)
+	row := PGXPool.QueryRow(ctx, "select server, secret_box_key, private_box_key, public_box_key, private_sign_key, public_sign_key from secrt.hostname join secrt.server using (server) where hostname=$1", hostname)
 
 	server := SecretServer{}
-	err := row.Scan(&server.Server, &server.PrivateBoxKey, &server.PublicBoxKey, &server.PrivateSignKey, &server.PublicSignKey)
+	err := row.Scan(&server.Server, &server.SecretBoxKey, &server.PrivateBoxKey, &server.PublicBoxKey, &server.PrivateSignKey, &server.PublicSignKey)
 	if err != nil {
 		return nil, fmt.Errorf("unable to find server %s: %w", hostname, err)
 	}
@@ -163,13 +169,23 @@ func WriteStatus(w http.ResponseWriter, status int, err error) error {
 	return err
 }
 
+// LogError is like WriteStatus but logs the error, and doesn't return it.
+func LogError(w http.ResponseWriter, status int, err error) {
+	log.Println(err)
+	http.Error(w, http.StatusText(status), status)
+}
+
+func GetHostname(r *http.Request) string {
+	host, _, _ := strings.Cut(r.Host, ":")
+	return host
+}
+
 // Dispatch finds the server using the request hostname, and calls the given method on it.
 // If the server can't be found, returns a 404.
 // This mechanism ensures that all HTTP requests are gated through a specific server UUID.
 func dispatch(method func(*SecretServer, http.ResponseWriter, *http.Request)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		host, _, _ := strings.Cut(r.Host, ":")
-
+		host := GetHostname(r)
 		s, err := GetSecretServer(host)
 		if err != nil {
 			log.Println(WriteStatus(w, http.StatusNotFound, err))
@@ -199,6 +215,9 @@ func StartServer() error {
 	mux.HandleFunc("GET "+pathPrefix+"peer/{peer}", dispatch((*SecretServer).handleGetPeer))
 	mux.HandleFunc("POST "+pathPrefix+"invite/{peer}", dispatch((*SecretServer).handleInvite))
 	mux.HandleFunc("GET "+pathPrefix+"challenge", dispatch((*SecretServer).handleGetChallenge))
+
+	// POST performs the enrolment. GET displays the HTML page.
+	mux.HandleFunc("POST "+pathPrefix+"validate", dispatch((*SecretServer).handleValidate))
 
 	log.Println("listening on :8080")
 	return http.ListenAndServe(":8080", mux)

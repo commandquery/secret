@@ -71,3 +71,12 @@ type ChallengeResponse struct {
 	Challenge []byte `json:"challenge"`
 	Nonce     uint64 `json:"nonce"`
 }
+
+type EnrolmentRequest struct {
+	PublicKey []byte `json:"publicKey"`
+}
+
+type ValidationRequest struct {
+	Token string `json:"token"`
+	Code  int    `json:"code"`
+}

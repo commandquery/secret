@@ -1,7 +1,13 @@
 # not-so-secret TODO
 
+## TESTING
+
+- [ ] test that sending to an unknown peer doesn't crash the server (!)
+- [ ] server doesn't seem to crash on panic?? maybe we should make sure it does (old server)
+
 ## Client
 
+- [ ] client should use a http.Client (not http.DefaultClient) that has reasonable timeouts
 - [X] client should always print the full UUID. you can optionally just use the prefix.
 - [ ] enrolment workflow 
   - [ ] enrolment messages (to the CLI) should come from the server!
@@ -23,7 +29,8 @@
 
 ## Server
 
-- [X] postgres backend
+- [ ] finish token validation -> actual enrolment
+- [ ] need to use LogError instead of WriteStatus in http handlers (instead of _ = WriteStatus(...))
 - [ ] need to automatically purge old messages from SQL
 - [ ] email enrolment verification (if required and available with server config)
 - [ ] secrt.io website.
@@ -96,3 +103,4 @@
 - [X] enrolment should use hashcash to limit mass enrolment
 - [X] verify the nonce headers on the server size
 - [X] spend more time ensuring that hashcash is really working properly
+- [X] postgres backend

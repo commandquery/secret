@@ -116,6 +116,9 @@ func main() {
 	case "invite":
 		err = CmdInvite(config, endpoint, args)
 
+	case "validate":
+		err = CmdValidate(config, endpoint, args)
+
 	case "genkey":
 		CmdGenKey()
 

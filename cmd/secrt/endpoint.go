@@ -281,12 +281,15 @@ func (endpoint *Endpoint) GetChallenge() (*secrt.ChallengeRequest, error) {
 	return challenge, nil
 }
 
-// Enrol with the given server. Enrolling means the server knows about
-// me, and I know the server's public key.
-// Note that enrolment is the only API that doesn't require a signature, so the
-// structure of this client code is unique.
+// Enrol with the given server. Enrolling means sending the server my public key.
+// This is sensitive because other users will download the new public key,
+// assuming it comes from who it says it comes from. To verify the email address,
+// the server will send an encrypted verification email containing a link and a code.
+// The user has to enter the code in order to complete enrolment.
 //
-// TODO: should require HashCash to enrol.
+// On the client side, enrolment happens in two steps. The first step sends a validation
+// code to the peer. The second step long-polls until the requested peer becomes active.
+// Both steps require a hashcash challenge to be solved.
 func (endpoint *Endpoint) enrol() error {
 
 	challengeRequest, err := endpoint.GetChallenge()
@@ -301,12 +304,21 @@ func (endpoint *Endpoint) enrol() error {
 
 	endpointURL := endpoint.Path("enrol", endpoint.PeerID)
 
-	// Post my public key
-	req, err := http.NewRequest(http.MethodPost, endpointURL, bytes.NewReader(endpoint.PublicKey))
+	enrolmentRequest := &secrt.EnrolmentRequest{
+		PublicKey: endpoint.PublicKey,
+	}
+
+	body, err := json.Marshal(enrolmentRequest)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Content-Type", "application/octet-stream")
+
+	req, err := http.NewRequest(http.MethodPost, endpointURL, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Challenge", base64.StdEncoding.EncodeToString(challengeResponse.Challenge))
 	req.Header.Set("Nonce", fmt.Sprintf("%d", challengeResponse.Nonce))
 

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,25 +9,6 @@ import (
 
 	"github.com/commandquery/secrt"
 )
-
-func ReadKeyPhrase() []byte {
-	p1 := ReadPassword("Enter passphrase:  ")
-	if p1 == nil {
-		return nil
-	}
-
-	p2 := ReadPassword("Verify passphrase: ")
-	if p2 == nil {
-		return nil
-	}
-
-	if !bytes.Equal(p1, p2) {
-		fmt.Println("passphrase mismatch")
-		return nil
-	}
-
-	return p1
-}
 
 func CmdEnrol(config *Config, args []string) error {
 
