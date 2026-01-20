@@ -1,11 +1,14 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+
+	"github.com/commandquery/secrt"
 )
 
 // CmdGet gets a secret. You can use either the short, 8-character UUID, or the full UUID
@@ -52,10 +55,12 @@ func CmdGet(config *Config, endpoint *Endpoint, args []string) error {
 	}
 
 	body, _ := io.ReadAll(resp.Body)
+	var message secrt.Message
+	if err := json.Unmarshal(body, &message); err != nil {
+		return fmt.Errorf("unable to unmarshal message: %w", err)
+	}
 
-	peerId := resp.Header.Get("Peer-ID")
-
-	cleartext, err := endpoint.Decrypt(config, peerId, body)
+	cleartext, err := endpoint.Decrypt(config, message.Sender, message.Payload)
 
 	if err != nil {
 		return fmt.Errorf("unable to decrypt message: %w", err)

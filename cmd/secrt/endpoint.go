@@ -339,11 +339,11 @@ func (endpoint *Endpoint) enrol() error {
 		return fmt.Errorf("unexpected status from server: %s", resp.Status)
 	}
 
-	serverKey, err := io.ReadAll(resp.Body)
-	if err != nil {
+	var enrolmentResponse secrt.EnrolmentResponse
+	if err := json.NewDecoder(resp.Body).Decode(&enrolmentResponse); err != nil {
 		return fmt.Errorf("unable to read server key: %w", err)
 	}
 
-	endpoint.ServerKey = serverKey
+	endpoint.ServerKey = enrolmentResponse.ServerKey
 	return nil
 }

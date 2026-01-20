@@ -10,10 +10,11 @@ export CGO_ENABLED=0
 export PGDATABASE=st
 export PGSSLMODE=disable
 
+set -ex
+
 dropdb $PGDATABASE
 createdb $PGDATABASE
 
-set -ex
 
 cleanup() {
     kill "$server" 2>/dev/null
@@ -65,6 +66,17 @@ if [ "$MSG" != "hello" ]; then
 fi
 
 #
+# Test that sending to an unknown peer fails
+# This caused a panic in an early server version!
+# If the server panics now, subsequent tests will fail.
+#
+echo "--- secrt send from harry using guy.json default server"
+if echo "hello" | secrt -c alice.json send nobody@example.com 2>/dev/null; then
+  echo "secrt send to nobody@example.com should have failed!" 2>&1
+  exit 1
+fi
+
+#
 # Use the short ID
 #
 echo "--- secrt get short"
@@ -111,6 +123,8 @@ if secrt -c charlie.json get $ALICEMSG 2> /dev/null; then
   echo "secrt get should have failed!" 1>&2
   exit 1
 fi
+
+
 
 #
 # Test different versions of "ls"
@@ -218,7 +232,7 @@ secrt -c alice.json send ./TEST.md bob@example.com charlie@example.com denise@ex
 #
 echo "--- secrt send multiple - error check"
 if secrt -c alice.json send ./TEST.md bob@example.com charlie@example.com denise@example.com error@example.com 2> /dev/null; then
-  echo "secrt send to nobody@example.com should have failed!" 2>&1
+  echo "secrt send to error@example.com should have failed!" 2>&1
   exit 1
 fi
 
@@ -250,6 +264,7 @@ secrt -c guy.json enrol harry@example.com http://localhost:8080/
 echo "--- secrt send from harry using guy.json default server"
 echo "hello" | secrt -c guy.json send alice@example.com
 secrt -c alice.json ls
+
 
 #
 # Attempt to double enrol with --force

@@ -99,7 +99,7 @@ func CmdLs(config *Config, endpoint *Endpoint, args []string) error {
 	return nil
 }
 
-func getLsEntry(config *Config, endpoint *Endpoint, msg *secrt.InboxMessage) *lsEntry {
+func getLsEntry(config *Config, endpoint *Endpoint, msg *secrt.Message) *lsEntry {
 
 	entry := &lsEntry{
 		ID:              msg.Message.String(),

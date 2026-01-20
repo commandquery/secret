@@ -72,7 +72,7 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 			return fmt.Errorf("unable to get peer: %w", err)
 		}
 
-		envelope := secrt.Envelope{}
+		envelope := secrt.SendRequest{}
 
 		envelope.Metadata, err = endpoint.Encrypt(clearmeta, peer.PublicKey)
 		if err != nil {

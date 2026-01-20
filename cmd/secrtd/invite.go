@@ -1,17 +1,18 @@
 package main
 
 import (
+	"context"
 	"log"
-	"net/http"
 )
 
-func (server *SecretServer) handleInvite(w http.ResponseWriter, r *http.Request) {
-	_, err := server.Authenticate(r)
-	if err != nil {
-		_ = WriteStatus(w, http.StatusUnauthorized, err)
-		return
+func (server *SecretServer) handleInvite(ctx context.Context, _ *EMPTY) (*EMPTY, *HTTPError) {
+	r := GetRequest(ctx)
+	_, aerr := server.Authenticate(r)
+	if aerr != nil {
+		return nil, aerr
 	}
 
 	peerID := r.PathValue("peer")
 	log.Println("received invite request for user:", peerID)
+	return nil, nil
 }

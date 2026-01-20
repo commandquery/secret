@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/commandquery/secrt"
@@ -93,33 +92,33 @@ func (server *SecretServer) GetPeer(alias string) (*Peer, bool) {
 	return &peer, true
 }
 
-func (server *SecretServer) Authenticate(r *http.Request) (*Peer, error) {
+func (server *SecretServer) Authenticate(r *http.Request) (*Peer, *HTTPError) {
 	sig := r.Header.Get("Signature")
 	if sig == "" {
-		return nil, errors.New("missing signature header")
+		return nil, ErrUnauthorized(fmt.Errorf("missing signature header"))
 	}
 
 	// Signature is base64-encoded JSON
 	js, err := base64.StdEncoding.DecodeString(sig)
 	if err != nil {
-		return nil, fmt.Errorf("invalid signature encoding: %w", err)
+		return nil, ErrUnauthorized(fmt.Errorf("invalid signature encoding: %w", err))
 	}
 
 	var signature secrt.Signature
 	if err = json.Unmarshal(js, &signature); err != nil {
-		return nil, fmt.Errorf("invalid signature: %w", err)
+		return nil, ErrUnauthorized(fmt.Errorf("invalid signature: %w", err))
 	}
 
 	ciphertext := signature.Sig
 
 	// Check that the version number works with us.
 	if ciphertext[0] != 0 {
-		return nil, fmt.Errorf("ciphertext version (%d) is not supported. Try upgrading `secret`.", ciphertext[0])
+		return nil, ErrUnauthorized(fmt.Errorf("signature version %d is not supported", ciphertext[0]))
 	}
 
 	peer, ok := server.GetPeer(signature.Peer)
 	if !ok {
-		return nil, fmt.Errorf("unknown peer %q", signature.Peer)
+		return nil, ErrUnauthorized(fmt.Errorf("unknown peer %q", signature.Peer))
 	}
 
 	var nonce [24]byte
@@ -128,71 +127,22 @@ func (server *SecretServer) Authenticate(r *http.Request) (*Peer, error) {
 	var out []byte
 	plaintext, ok := box.Open(out, ciphertext[25:], &nonce, secrt.To32(peer.PublicKey), secrt.To32(server.PrivateBoxKey))
 	if !ok {
-		return nil, fmt.Errorf("unable to authenticate message from %s", peer.Alias)
+		return nil, ErrUnauthorized(fmt.Errorf("failed authenticate message from %s", peer.Alias))
 	}
 
 	timestamp, err := strconv.ParseInt(string(plaintext), 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("invalid timestamp: %w", err)
+		return nil, ErrUnauthorized(fmt.Errorf("invalid timestamp: %w", err))
 	}
 
 	// check time window
 	now := time.Now().Unix()
 	diff := now - timestamp
 	if diff > Config.SignatureSkew || diff < -Config.SignatureSkew {
-		return nil, errors.New("signature expired")
+		return nil, ErrUnauthorized(errors.New("signature expired"))
 	}
 
 	return peer, nil
-}
-
-func WriteError(w http.ResponseWriter, err error) {
-	log.Println(err)
-	switch {
-	case errors.Is(err, ErrUnknownMessageID):
-		http.Error(w, "unknown message id", http.StatusNotFound)
-		return
-	case errors.Is(err, ErrAmbiguousMessageID):
-		http.Error(w, "ambiguous message id", http.StatusConflict)
-		return
-	default:
-		_ = WriteStatus(w, http.StatusInternalServerError, err)
-		return
-	}
-}
-
-// WriteStatus sets the HTTP status and sends a message. Returns the provided
-// error, making it possible to call WriteStatus and return with an error in a single
-// statement.
-func WriteStatus(w http.ResponseWriter, status int, err error) error {
-	http.Error(w, http.StatusText(status), status)
-	return err
-}
-
-// LogError is like WriteStatus but logs the error, and doesn't return it.
-func LogError(w http.ResponseWriter, status int, err error) {
-	log.Println(err)
-	http.Error(w, http.StatusText(status), status)
-}
-
-func GetHostname(r *http.Request) string {
-	host, _, _ := strings.Cut(r.Host, ":")
-	return host
-}
-
-// Dispatch finds the server using the request hostname, and calls the given method on it.
-// If the server can't be found, returns a 404.
-// This mechanism ensures that all HTTP requests are gated through a specific server UUID.
-func dispatch(method func(*SecretServer, http.ResponseWriter, *http.Request)) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		host := GetHostname(r)
-		s, err := GetSecretServer(host)
-		if err != nil {
-			log.Println(WriteStatus(w, http.StatusNotFound, err))
-			return
-		}
-		method(s, w, r)
-	}
 }
 
 func StartServer() error {
@@ -206,18 +156,26 @@ func StartServer() error {
 
 	// The server works by finding a SecretServer based on the request's hostname, and then dispatching
 	// to a function on that server.
+	//
+	// The unusual syntax (*SecretServer).functionName is a function expression representing a method.
+	// It returns a function whose first argument is the target object. The generic dispatchJS
+	// function uses the arguments of the method to infer the types.
+	//
+	// This makes things really easy to code and eliminates a number of gotchas in the standard
+	// library, but it takes a little getting used to.
 
-	mux.HandleFunc("POST "+pathPrefix+"enrol/{peer}", dispatch((*SecretServer).handleEnrol))
-	mux.HandleFunc("GET "+pathPrefix+"inbox", dispatch((*SecretServer).handleGetInbox))
-	mux.HandleFunc("POST "+pathPrefix+"message/{recipient}", dispatch((*SecretServer).handlePostMessage))
-	mux.HandleFunc("GET "+pathPrefix+"message/{id}", dispatch((*SecretServer).handleGetMessage))
-	mux.HandleFunc("DELETE "+pathPrefix+"message/{id}", dispatch((*SecretServer).handleDeleteMessage))
-	mux.HandleFunc("GET "+pathPrefix+"peer/{peer}", dispatch((*SecretServer).handleGetPeer))
-	mux.HandleFunc("POST "+pathPrefix+"invite/{peer}", dispatch((*SecretServer).handleInvite))
-	mux.HandleFunc("GET "+pathPrefix+"challenge", dispatch((*SecretServer).handleGetChallenge))
+	mux.HandleFunc("POST "+pathPrefix+"enrol/{peer}", dispatchJS((*SecretServer).handleEnrol))
+	mux.HandleFunc("GET "+pathPrefix+"inbox", dispatchJS((*SecretServer).handleGetInbox))
+	mux.HandleFunc("POST "+pathPrefix+"message/{recipient}", dispatchJS((*SecretServer).handlePostMessage))
+	mux.HandleFunc("GET "+pathPrefix+"message/{id}", dispatchJS((*SecretServer).handleGetMessage))
+	mux.HandleFunc("DELETE "+pathPrefix+"message/{id}", dispatchJS((*SecretServer).handleDeleteMessage))
+	mux.HandleFunc("GET "+pathPrefix+"peer/{peer}", dispatchJS((*SecretServer).handleGetPeer))
+	mux.HandleFunc("POST "+pathPrefix+"invite/{peer}", dispatchJS((*SecretServer).handleInvite))
+	mux.HandleFunc("GET "+pathPrefix+"challenge", dispatchJS((*SecretServer).handleGetChallenge))
 
 	// POST performs the enrolment. GET displays the HTML page.
-	mux.HandleFunc("POST "+pathPrefix+"validate", dispatch((*SecretServer).handleValidate))
+	//mux.HandleFunc("POST "+pathPrefix+"validate", dispatch((*SecretServer).handleValidate))
+	mux.HandleFunc("POST "+pathPrefix+"validate", dispatchJS((*SecretServer).handleValidate))
 
 	log.Println("listening on :8080")
 	return http.ListenAndServe(":8080", mux)

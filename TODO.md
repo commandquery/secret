@@ -1,13 +1,11 @@
 # not-so-secret TODO
 
-## TESTING
-
-- [ ] test that sending to an unknown peer doesn't crash the server (!)
-- [ ] server doesn't seem to crash on panic?? maybe we should make sure it does (old server)
 
 ## Client
 
+- [ ] some nice JSON wrappers for sending and receiving JSON
 - [ ] client should use a http.Client (not http.DefaultClient) that has reasonable timeouts
+- [ ] defer "adding new peer" messages to client exit
 - [X] client should always print the full UUID. you can optionally just use the prefix.
 - [ ] enrolment workflow 
   - [ ] enrolment messages (to the CLI) should come from the server!
@@ -16,8 +14,8 @@
     - move the smtp config into server config
     - send a proper email with an enrolment link
     - need a server page to accept the enrolment link.
-  - [ ] client should JSON to server with public key instead of binary (allows extension later)
-  - [ ] handleEnrol should return server public key as JSON instead of binary (allows extension later)
+  - [X] client should JSON to server with public key instead of binary (allows extension later)
+  - [X] handleEnrol should return server public key as JSON instead of binary (allows extension later)
   - [ ] clicking on email agrees to T&Cs -OR- does the download/license cover it?
 - [ ] how to prevent unwanted messages / spam? block user until authorised? block/report address?
   - [ ] require invite
@@ -29,9 +27,11 @@
 
 ## Server
 
+- [ ] finish converting handlers to use dispatchJS
 - [ ] finish token validation -> actual enrolment
 - [ ] need to use LogError instead of WriteStatus in http handlers (instead of _ = WriteStatus(...))
 - [ ] need to automatically purge old messages from SQL
+- [ ] need maximum message size limits in dispatchJS (http.MaxBytesReader) and configurable (lower) limits in handlePostMessage 
 - [ ] email enrolment verification (if required and available with server config)
 - [ ] secrt.io website.
 - [ ] deploy as an actual service (kill the version running at emersion)
@@ -104,3 +104,6 @@
 - [X] verify the nonce headers on the server size
 - [X] spend more time ensuring that hashcash is really working properly
 - [X] postgres backend
+- [X] test that sending to an unknown peer doesn't crash the server (!)
+- [X] some nice JSON wrappers for sending and receiving JSON - readJSON and writeJSON generics?
+- [X] replace http.ServeFunc with ?? ServeAPI[T] ?

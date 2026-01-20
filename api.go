@@ -9,15 +9,16 @@ const MessageSizeLimit = 50 * 1024 // 100 KiB
 
 // Inbox is the JSON struct used to represent the inbox.
 type Inbox struct {
-	Messages []InboxMessage `json:"messages"`
+	Messages []Message `json:"messages"`
 }
 
-type InboxMessage struct {
+type Message struct {
 	Message   uuid.UUID `json:"id"`
 	Sender    string    `json:"sender"`
 	Timestamp int64     `json:"timestamp"`
 	Size      int       `json:"size"`     // encrypted size. used as a hint.
 	Metadata  []byte    `json:"metadata"` // encrypted metadata, contains unencrypted size.
+	Payload   []byte    `json:"payload"`  // note that this is empty for inbox lookups
 }
 
 type Metadata struct {
@@ -26,10 +27,10 @@ type Metadata struct {
 	Filename    string `json:"filename"`
 }
 
-// Envelope wraps encrypted metadata with the encrypted payload.
+// SendRequest wraps encrypted metadata with the encrypted payload.
 // Metadata is returned for 'secrt ls', while the payload is returned
 // for 'secrt get'.
-type Envelope struct {
+type SendRequest struct {
 	Payload  []byte `json:"payload"`
 	Metadata []byte `json:"metadata"` // encrypted secret.Metadata (json)
 }
@@ -76,7 +77,14 @@ type EnrolmentRequest struct {
 	PublicKey []byte `json:"publicKey"`
 }
 
+type EnrolmentResponse struct {
+	ServerKey []byte `json:"serverKey"`
+}
+
 type ValidationRequest struct {
 	Token string `json:"token"`
 	Code  int    `json:"code"`
+}
+
+type ValidationResponse struct {
 }

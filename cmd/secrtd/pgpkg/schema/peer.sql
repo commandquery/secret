@@ -5,9 +5,7 @@ create table secrt.peer (
     peer uuid not null,
     alias text not null,
     public_box_key bytea not null,
-    verified bool not null default false,    -- address has been verified
-    marketing bool not null default false,   -- has allowed marketing comms
-    operations bool not null default true    -- has disabled operational comms
+    verified bool not null default false    -- address has been verified
 );
 
 create index peer_alias_idx on secrt.peer (server, alias);

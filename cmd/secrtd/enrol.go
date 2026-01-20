@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -41,26 +40,26 @@ func (server *SecretServer) enrolUser(alias string, peerKey []byte) (uuid.UUID, 
 }
 
 // Verify the challenge. If the challenge is invalid, set the HTTP request status and return an error.
-func (server *SecretServer) verifyChallenge(w http.ResponseWriter, r *http.Request) error {
+func (server *SecretServer) verifyChallenge(r *http.Request) error {
 	// enrolment requires a challenge and nonce header.
 	challenge64 := r.Header.Get("Challenge")
 	if challenge64 == "" {
-		return WriteStatus(w, http.StatusForbidden, fmt.Errorf("no challenge provided"))
+		return ErrForbidden(fmt.Errorf("no challenge provided"))
 	}
 
 	nonceStr := r.Header.Get("Nonce")
 	if nonceStr == "" {
-		return WriteStatus(w, http.StatusForbidden, fmt.Errorf("no nonce provided"))
+		return ErrForbidden(fmt.Errorf("no nonce provided"))
 	}
 
 	challenge, err := base64.StdEncoding.DecodeString(challenge64)
 	if err != nil {
-		return WriteStatus(w, http.StatusBadRequest, fmt.Errorf("invalid challenge encoding: %w", err))
+		return ErrBadRequest(fmt.Errorf("invalid challenge encoding: %w", err))
 	}
 
 	nonce, err := strconv.ParseUint(nonceStr, 10, 64)
 	if err != nil {
-		return WriteStatus(w, http.StatusBadRequest, fmt.Errorf("invalid nonce encoding: %w", err))
+		return ErrBadRequest(fmt.Errorf("invalid nonce encoding: %w", err))
 	}
 
 	challengeResponse := &secrt.ChallengeResponse{
@@ -69,7 +68,7 @@ func (server *SecretServer) verifyChallenge(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err = secrt.ValidateResponse(challengeResponse, server.PublicSignKey); err != nil {
-		return WriteStatus(w, http.StatusForbidden, fmt.Errorf("invalid challenge solution: %w", err))
+		return ErrForbidden(fmt.Errorf("invalid challenge solution: %w", err))
 	}
 
 	return nil
@@ -98,44 +97,36 @@ func (server *SecretServer) verifyEnrolment(w http.ResponseWriter, r *http.Reque
 // Server processes enrolment request and sets status based on results.
 
 // Enrollment accepts a key from the client, and returns the server key.
-func (server *SecretServer) handleEnrol(w http.ResponseWriter, r *http.Request) {
+func (server *SecretServer) handleEnrol(ctx context.Context, req *secrt.EnrolmentRequest) (*secrt.EnrolmentResponse, *HTTPError) {
 
-	if err := server.verifyChallenge(w, r); err != nil {
-		LogError(w, http.StatusUnauthorized, err)
-		return
+	r := GetRequest(ctx)
+
+	if err := server.verifyChallenge(r); err != nil {
+		return nil, ErrForbidden(err)
 	}
 
 	peerID := r.PathValue("peer")
 	log.Printf("challenge response accepted for enrolment request from peer %s", peerID)
 
-	var enrolmentRequest secrt.EnrolmentRequest
-	if err := json.NewDecoder(r.Body).Decode(&enrolmentRequest); err != nil {
-		LogError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	enrolmentUrl, code, err := server.makeEnrolmentURL(GetHostname(r), peerID, enrolmentRequest.PublicKey)
+	enrolmentUrl, code, err := server.makeEnrolmentURL(GetHostname(r), peerID, req.PublicKey)
 	if err != nil {
-		LogError(w, http.StatusInternalServerError, err)
-		return
+		return nil, ErrInternalServerError(err)
 	}
 
 	log.Println("url:", enrolmentUrl)
 	log.Println("code:", code)
 
-	if _, err := server.enrolUser(peerID, enrolmentRequest.PublicKey); err != nil {
+	if _, err := server.enrolUser(peerID, req.PublicKey); err != nil {
 		if errors.Is(err, ErrExistingPeer) {
-			LogError(w, http.StatusConflict, fmt.Errorf("peer %s already enrolled", peerID))
-			return
+			return nil, ErrConflict(fmt.Errorf("peer %s already enrolled", peerID))
 		}
 
-		LogError(w, http.StatusInternalServerError, err)
-
-		return
+		return nil, ErrInternalServerError(err)
 	}
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	_, _ = w.Write(server.PublicBoxKey)
+	return &secrt.EnrolmentResponse{
+		ServerKey: server.PublicBoxKey,
+	}, nil
 }
 
 // Encode the enrolment details into a URL. Note that we use URLEncoding for this.
@@ -154,29 +145,22 @@ func (server *SecretServer) makeEnrolmentURL(hostname string, alias string, publ
 	return "https://" + hostname + "/validate/?t=" + base64.URLEncoding.EncodeToString(sealedToken), enrolmentToken.Code, nil
 }
 
-func (server *SecretServer) handleValidate(w http.ResponseWriter, r *http.Request) {
-	var validationRequest secrt.ValidationRequest
-	if err := json.NewDecoder(r.Body).Decode(&validationRequest); err != nil {
-		LogError(w, http.StatusBadRequest, err)
-		return
-	}
-
-	sealedToken, err := base64.URLEncoding.DecodeString(validationRequest.Token)
+func (server *SecretServer) handleValidate(ctx context.Context, req *secrt.ValidationRequest) (*secrt.ValidationResponse, *HTTPError) {
+	sealedToken, err := base64.URLEncoding.DecodeString(req.Token)
 	if err != nil {
-		LogError(w, http.StatusBadRequest, err)
-		return
+		return nil, ErrBadRequest(err)
 	}
 
 	enrolmentToken, err := decrypt[EnrolmentToken](server, sealedToken)
 	if err != nil {
-		LogError(w, http.StatusBadRequest, err)
-		return
+		return nil, ErrBadRequest(err)
 	}
 
-	if validationRequest.Code != enrolmentToken.Code {
-		LogError(w, http.StatusForbidden, fmt.Errorf("invalid enrolment token code"))
-		return
+	if req.Code != enrolmentToken.Code {
+		return nil, ErrForbidden(fmt.Errorf("enrolment token code does not match request"))
 	}
 
 	log.Println("got valid enrolment request for", enrolmentToken.Peer)
+
+	return &secrt.ValidationResponse{}, nil
 }

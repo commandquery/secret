@@ -15,6 +15,7 @@ import (
 // you can do it here.
 
 func CmdValidate(config *Config, endpoint *Endpoint, args []string) error {
+
 	if len(args) != 2 {
 		return fmt.Errorf("usage: secrt validate <token> <code>")
 	}

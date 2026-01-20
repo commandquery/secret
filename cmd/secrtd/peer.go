@@ -1,10 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/binary"
-	"encoding/json"
-	"log"
-	"net/http"
+	"fmt"
 	"strconv"
 
 	"github.com/commandquery/secrt"
@@ -30,36 +29,26 @@ func uuidBoundsFromPrefix(prefix uint32) (lower, upper uuid.UUID) {
 	return lower, upper
 }
 
-func (server *SecretServer) handleGetPeer(w http.ResponseWriter, r *http.Request) {
+func (server *SecretServer) handleGetPeer(ctx context.Context, _ *EMPTY) (*secrt.Peer, *HTTPError) {
+
+	r := GetRequest(ctx)
+
 	if _, err := server.Authenticate(r); err != nil {
-		_ = WriteStatus(w, http.StatusUnauthorized, nil)
-		return
+		return nil, err
 	}
 
 	peerID := r.PathValue("peer")
 	if peerID == "" {
-		_ = WriteStatus(w, http.StatusBadRequest, nil)
-		return
+		return nil, ErrBadRequest(fmt.Errorf("missing peer parameter"))
 	}
 
-	user, ok := server.GetPeer(peerID)
+	peer, ok := server.GetPeer(peerID)
 	if !ok {
-		_ = WriteStatus(w, http.StatusNotFound, nil)
-		return
+		return nil, ErrNotFound(fmt.Errorf("peer not found"))
 	}
 
-	peer := secrt.Peer{
+	return &secrt.Peer{
 		Peer:      peerID,
-		PublicKey: user.PublicKey,
-	}
-
-	peerjs, err := json.Marshal(peer)
-	if err != nil {
-		log.Println("unable to marshal peer:", err)
-		_ = WriteStatus(w, http.StatusInternalServerError, err)
-		return
-	}
-
-	w.Header().Add("Content-Type", "application/json")
-	_, _ = w.Write(peerjs)
+		PublicKey: peer.PublicKey,
+	}, nil
 }
