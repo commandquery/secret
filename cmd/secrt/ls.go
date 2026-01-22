@@ -5,8 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"time"
 
@@ -37,40 +35,9 @@ func CmdLs(config *Config, endpoint *Endpoint, args []string) error {
 		return err
 	}
 
-	endpointURL := endpoint.Path("inbox")
-
-	req, err := http.NewRequest("GET", endpointURL, nil)
-	if err != nil {
-		return err
-	}
-
-	if err = endpoint.SetSignature(req); err != nil {
-		return fmt.Errorf("unable to set signature: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
-
-	if resp.StatusCode == http.StatusNoContent {
-		fmt.Println("No messages")
-		return nil
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("inbox failed: %s %s", resp.Status, body)
-	}
-
 	var inbox secrt.Inbox
-	err = json.Unmarshal(body, &inbox)
-	if err != nil {
-		return fmt.Errorf("unable to parse inbox: %w", err)
+	if err := Call(endpoint, EMPTY, &inbox, "GET", "inbox"); err != nil {
+		return err
 	}
 
 	if *jsFormat {

@@ -1,11 +1,8 @@
 package main
 
 import (
-	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 
 	"github.com/commandquery/secrt"
@@ -26,38 +23,9 @@ func CmdGet(config *Config, endpoint *Endpoint, args []string) error {
 		return fmt.Errorf("message ID not specified")
 	}
 
-	endpointURL := endpoint.Path("message", args[0])
-
-	req, err := http.NewRequest("GET", endpointURL, nil)
-	if err != nil {
-		return err
-	}
-
-	if err = endpoint.SetSignature(req); err != nil {
-		return fmt.Errorf("unable to set signature: %w", err)
-	}
-
-	req.Header.Set("Accept", "application/octet-stream")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return fmt.Errorf("message %s not found", args[0])
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("unable to get message: %s %s", resp.Status, body)
-	}
-
-	body, _ := io.ReadAll(resp.Body)
 	var message secrt.Message
-	if err := json.Unmarshal(body, &message); err != nil {
-		return fmt.Errorf("unable to unmarshal message: %w", err)
+	if err := Call(endpoint, EMPTY, &message, "GET", "message", args[0]); err != nil {
+		return fmt.Errorf("unable to get message %s: %w", args[0], err)
 	}
 
 	cleartext, err := endpoint.Decrypt(config, message.Sender, message.Payload)

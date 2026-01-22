@@ -4,27 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/commandquery/secrt"
 )
 
-// EMPTY is the type you should use as the request type if the
-// request body should be empty.
+// EMPTY is the type you should use as the request type if the request body or response should be empty.
 type EMPTY struct{}
-
-type HTTPError struct {
-	StatusCode int
-	Err        error
-}
-
-func (e HTTPError) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("Error: %s (http status %d)", e.Err.Error(), e.StatusCode)
-	}
-	return fmt.Sprintf("HTTP status %d", e.StatusCode)
-}
 
 var CtxRequestKey struct{}
 
@@ -34,9 +22,14 @@ func GetRequest(ctx context.Context) *http.Request {
 	return ctx.Value(CtxRequestKey).(*http.Request)
 }
 
-// dispatchJS is a http.ServeFunc wrapper that makes operations that receive
-// and produce JSON both typesafe, error safe, and super simple.
-func dispatchJS[IN any, OUT any](method func(*SecretServer, context.Context, *IN) (*OUT, *HTTPError)) http.HandlerFunc {
+// dispatch returns a http.ServeFunc that calls a function that defines an input and output object type,
+// which is automatically converted to/from JSON.
+// This makes operations that receive and produce JSON typesafe (no conversions needed), error safe (error
+// states always return), and super simple (zero boilerplate).
+//
+// If either the IN type is declared as the type EMPTY, nothing is read from the request body.
+// If the return (non-error) value is nil, nothing is written to the response.
+func dispatch[IN any, OUT any](method func(*SecretServer, context.Context, *IN) (*OUT, *secrt.HTTPError)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		host := GetHostname(r)
 		s, err := GetSecretServer(host)
@@ -62,61 +55,14 @@ func dispatchJS[IN any, OUT any](method func(*SecretServer, context.Context, *IN
 			return
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		err = json.NewEncoder(w).Encode(out)
-		if err != nil {
-			// It's probably too late to do anything at this point.
-			LogError(w, http.StatusBadRequest, err)
+		if out != nil {
+			w.Header().Set("Content-Type", "application/json")
+			err = json.NewEncoder(w).Encode(out)
+			if err != nil {
+				// It's probably too late to do anything at this point.
+				LogError(w, http.StatusBadRequest, err)
+			}
 		}
-	}
-}
-
-func ErrBadRequest(err error) *HTTPError {
-	return &HTTPError{
-		StatusCode: http.StatusBadRequest,
-		Err:        err,
-	}
-}
-
-func ErrNotFound(err error) *HTTPError {
-	return &HTTPError{
-		StatusCode: http.StatusNotFound,
-		Err:        err,
-	}
-}
-
-func ErrInternalServerError(err error) *HTTPError {
-	return &HTTPError{
-		StatusCode: http.StatusInternalServerError,
-		Err:        err,
-	}
-}
-
-func ErrForbidden(err error) *HTTPError {
-	return &HTTPError{
-		StatusCode: http.StatusForbidden,
-		Err:        err,
-	}
-}
-
-func ErrUnauthorized(err error) *HTTPError {
-	return &HTTPError{
-		StatusCode: http.StatusUnauthorized,
-		Err:        err,
-	}
-}
-
-func ErrConflict(err error) *HTTPError {
-	return &HTTPError{
-		StatusCode: http.StatusConflict,
-		Err:        err,
-	}
-}
-
-func ErrNoContent() *HTTPError {
-	return &HTTPError{
-		StatusCode: http.StatusConflict,
-		Err:        nil,
 	}
 }
 

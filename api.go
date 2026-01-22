@@ -77,11 +77,17 @@ type EnrolmentRequest struct {
 	PublicKey []byte `json:"publicKey"`
 }
 
+const (
+	EnrolStatusComplete = "complete" // The enrolment succeeded
+	EnrolStatusActivate = "activate" // Enrolment requires activation.
+)
+
 type EnrolmentResponse struct {
 	ServerKey []byte `json:"serverKey"`
+	Activated bool   `json:"activated"`
 }
 
-type ValidationRequest struct {
+type ActivationRequest struct {
 	Token string `json:"token"`
 	Code  int    `json:"code"`
 }

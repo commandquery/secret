@@ -25,7 +25,7 @@ type Message struct {
 	Payload     []byte
 }
 
-func (server *SecretServer) handlePostMessage(ctx context.Context, envelope *secrt.SendRequest) (*secrt.SendResponse, *HTTPError) {
+func (server *SecretServer) handlePostMessage(ctx context.Context, envelope *secrt.SendRequest) (*secrt.SendResponse, *secrt.HTTPError) {
 	r := GetRequest(ctx)
 	sender, aerr := server.Authenticate(r)
 	if aerr != nil {
@@ -34,12 +34,12 @@ func (server *SecretServer) handlePostMessage(ctx context.Context, envelope *sec
 
 	recipientID := r.PathValue("recipient")
 	if recipientID == "" {
-		return nil, ErrBadRequest(fmt.Errorf("missing recipient"))
+		return nil, secrt.BadRequestError(fmt.Errorf("missing recipient"))
 	}
 
 	recipient, ok := server.GetPeer(recipientID)
 	if !ok {
-		return nil, ErrNotFound(fmt.Errorf("recipient not found"))
+		return nil, secrt.NotFoundError(fmt.Errorf("recipient not found"))
 	}
 
 	newMessage := &Message{
@@ -56,7 +56,7 @@ func (server *SecretServer) handlePostMessage(ctx context.Context, envelope *sec
 	_, err := PGXPool.Exec(ctx, "insert into secrt.message (server, peer, message, sender, received, metadata, payload) values ($1, $2, $3, $4, $5, $6, $7)",
 		newMessage.Server, newMessage.Peer, newMessage.Message, newMessage.Sender, newMessage.Received, envelope.Metadata, envelope.Payload)
 	if err != nil {
-		return nil, ErrInternalServerError(fmt.Errorf("unable to insert message: %w", err))
+		return nil, secrt.InternalServerError(fmt.Errorf("unable to insert message: %w", err))
 	}
 
 	//recipient.AddMessage(newMessage)
@@ -68,7 +68,7 @@ func (server *SecretServer) handlePostMessage(ctx context.Context, envelope *sec
 	}, nil
 }
 
-func (server *SecretServer) handleGetMessage(ctx context.Context, _ *EMPTY) (*secrt.Message, *HTTPError) {
+func (server *SecretServer) handleGetMessage(ctx context.Context, _ *EMPTY) (*secrt.Message, *secrt.HTTPError) {
 
 	//func (server *SecretServer) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	r := GetRequest(ctx)
@@ -79,18 +79,18 @@ func (server *SecretServer) handleGetMessage(ctx context.Context, _ *EMPTY) (*se
 
 	id := r.PathValue("id")
 	if len(id) != 8 && len(id) != 36 {
-		return nil, ErrBadRequest(fmt.Errorf("invalid message id"))
+		return nil, secrt.BadRequestError(fmt.Errorf("invalid message id"))
 	}
 
 	msg, err := GetMessage(peer, id)
 	if err != nil {
 		if errors.Is(err, ErrUnknownMessageID) {
-			return nil, ErrNotFound(err)
+			return nil, secrt.NotFoundError(err)
 		}
 		if errors.Is(err, ErrAmbiguousMessageID) {
-			return nil, ErrBadRequest(err)
+			return nil, secrt.BadRequestError(err)
 		}
-		return nil, ErrInternalServerError(fmt.Errorf("error while retrieving message: %w", err))
+		return nil, secrt.InternalServerError(fmt.Errorf("error while retrieving message: %w", err))
 	}
 
 	return &secrt.Message{
@@ -102,7 +102,7 @@ func (server *SecretServer) handleGetMessage(ctx context.Context, _ *EMPTY) (*se
 	}, nil
 }
 
-func (server *SecretServer) handleDeleteMessage(ctx context.Context, _ *EMPTY) (*EMPTY, *HTTPError) {
+func (server *SecretServer) handleDeleteMessage(ctx context.Context, _ *EMPTY) (*EMPTY, *secrt.HTTPError) {
 	//func (server *SecretServer) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 	r := GetRequest(ctx)
 	peer, aerr := server.Authenticate(r)
@@ -112,21 +112,21 @@ func (server *SecretServer) handleDeleteMessage(ctx context.Context, _ *EMPTY) (
 
 	id := r.PathValue("id")
 	if len(id) != 8 && len(id) != 36 {
-		return nil, ErrBadRequest(fmt.Errorf("invalid message id"))
+		return nil, secrt.BadRequestError(fmt.Errorf("invalid message id"))
 	}
 
 	msg, err := GetMessage(peer, id)
 	if err != nil {
 		if errors.Is(err, ErrUnknownMessageID) {
-			return nil, ErrNotFound(err)
+			return nil, secrt.NotFoundError(err)
 		}
 		if errors.Is(err, ErrAmbiguousMessageID) {
-			return nil, ErrBadRequest(err)
+			return nil, secrt.BadRequestError(err)
 		}
 	}
 
 	if err = msg.Delete(); err != nil {
-		return nil, ErrInternalServerError(fmt.Errorf("unable to delete message: %w", err))
+		return nil, secrt.InternalServerError(fmt.Errorf("unable to delete message: %w", err))
 	}
 
 	return nil, nil

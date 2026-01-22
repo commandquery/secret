@@ -29,7 +29,7 @@ func uuidBoundsFromPrefix(prefix uint32) (lower, upper uuid.UUID) {
 	return lower, upper
 }
 
-func (server *SecretServer) handleGetPeer(ctx context.Context, _ *EMPTY) (*secrt.Peer, *HTTPError) {
+func (server *SecretServer) handleGetPeer(ctx context.Context, _ *EMPTY) (*secrt.Peer, *secrt.HTTPError) {
 
 	r := GetRequest(ctx)
 
@@ -39,12 +39,12 @@ func (server *SecretServer) handleGetPeer(ctx context.Context, _ *EMPTY) (*secrt
 
 	peerID := r.PathValue("peer")
 	if peerID == "" {
-		return nil, ErrBadRequest(fmt.Errorf("missing peer parameter"))
+		return nil, secrt.BadRequestError(fmt.Errorf("missing peer parameter"))
 	}
 
 	peer, ok := server.GetPeer(peerID)
 	if !ok {
-		return nil, ErrNotFound(fmt.Errorf("peer not found"))
+		return nil, secrt.NotFoundError(fmt.Errorf("peer not found"))
 	}
 
 	return &secrt.Peer{

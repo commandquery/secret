@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
-	"io"
-	"net/http"
 	"regexp"
 
 	"github.com/commandquery/secrt"
@@ -50,7 +48,8 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 
 	metadata.Description = *description
 
-	// Do a pass to ensure that all peers are known.
+	// Do a pass to ensure that all peers are known. This lets us fail early if we don't
+	// accept new peers, or if there's a typo.
 	for _, peerID := range peerList {
 		_, err = endpoint.GetPeer(config, peerID)
 		if err != nil {
@@ -65,6 +64,8 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 	}
 
 	// Now do another pass that actually sends the message.
+	var sendErrors []error
+	var sendRequests []secrt.SendRequest
 
 	for _, peerID := range peerList {
 		peer, err := endpoint.GetPeer(config, peerID)
@@ -72,58 +73,31 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 			return fmt.Errorf("unable to get peer: %w", err)
 		}
 
-		envelope := secrt.SendRequest{}
+		request := secrt.SendRequest{}
 
-		envelope.Metadata, err = endpoint.Encrypt(clearmeta, peer.PublicKey)
+		request.Metadata, err = endpoint.Encrypt(clearmeta, peer.PublicKey)
 		if err != nil {
-			return fmt.Errorf("unable to encrypt envelope: %w", err)
+			return fmt.Errorf("unable to encrypt metadata: %w", err)
 		}
 
-		envelope.Payload, err = endpoint.Encrypt(plaintext, peer.PublicKey)
+		request.Payload, err = endpoint.Encrypt(plaintext, peer.PublicKey)
 		if err != nil {
 			return fmt.Errorf("unable to encrypt payload: %w", err)
 		}
 
-		envelopeJS, err := json.Marshal(envelope)
-		if err != nil {
-			return fmt.Errorf("unable to encode envelope: %w", err)
-		}
-
-		if len(envelopeJS) > secrt.MessageSizeLimit {
-			return ErrSecretTooBig
-		}
-
-		endpointURL := endpoint.URL + "message/" + peerID
-
-		req, err := http.NewRequest("POST", endpointURL, bytes.NewReader(envelopeJS))
-		if err != nil {
-			return err
-		}
-
-		if err = endpoint.SetSignature(req); err != nil {
-			return fmt.Errorf("unable to set signature: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/octet-stream")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("share failed: %s: %s", resp.Status, body)
-		}
-
-		var shareResponse secrt.SendResponse
-		if err = json.NewDecoder(resp.Body).Decode(&shareResponse); err != nil {
-			return fmt.Errorf("unable to decode share response: %w", err)
-		}
-
-		fmt.Printf("%s\n", shareResponse.ID.String())
+		sendRequests = append(sendRequests, request)
 	}
 
-	return nil
+	for i, request := range sendRequests {
+		var sendResponse secrt.SendResponse
+
+		err = Call(endpoint, request, &sendResponse, "POST", "message", peerList[i])
+		if err != nil {
+			sendErrors = append(sendErrors, err)
+		} else {
+			fmt.Printf("%s\n", sendResponse.ID.String())
+		}
+	}
+
+	return errors.Join(sendErrors...)
 }

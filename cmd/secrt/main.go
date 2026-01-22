@@ -61,17 +61,24 @@ func main() {
 		} else {
 			err = CmdEnrol(config, args)
 			if err == nil {
-				os.Exit(0)
+				err = config.Save()
 			}
 
-			secrt.Exit(1, err)
-			return
+			if err == nil {
+				os.Exit(0)
+			}
 		}
+
+		secrt.Exit(1, err)
+		return
 	}
 
 	switch command {
 	case "enrol":
 		err = CmdEnrol(config, args)
+		if err == nil {
+			err = config.Save()
+		}
 
 	case "key":
 		err = CmdKey(endpoint)
@@ -116,8 +123,8 @@ func main() {
 	case "invite":
 		err = CmdInvite(config, endpoint, args)
 
-	case "validate":
-		err = CmdValidate(config, endpoint, args)
+	case "activate":
+		err = CmdActivate(config, endpoint, args)
 
 	case "genkey":
 		CmdGenKey()

@@ -13,6 +13,7 @@ var Config struct {
 	ChallengeSize    int    `split_words:"true" default:"20"` // Incrementing by 1 *doubles* the complexity
 	PathPrefix       string `split_words:"true" default:"/"`
 	ServerConfigPath string `split_words:"true" default:"./server.json"`
+	AutoEnrol        bool   `split_words:"true" default:"false"`
 }
 
 func initConfig() error {

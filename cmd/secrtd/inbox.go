@@ -8,7 +8,7 @@ import (
 	"github.com/commandquery/secrt"
 )
 
-func (server *SecretServer) handleGetInbox(ctx context.Context, _ *EMPTY) (*secrt.Inbox, *HTTPError) {
+func (server *SecretServer) handleGetInbox(ctx context.Context, _ *EMPTY) (*secrt.Inbox, *secrt.HTTPError) {
 	peer, aerr := server.Authenticate(GetRequest(ctx))
 	if aerr != nil {
 		return nil, aerr
@@ -19,7 +19,7 @@ func (server *SecretServer) handleGetInbox(ctx context.Context, _ *EMPTY) (*secr
 				from secrt.message join secrt.peer on (peer.server = message.server and peer.peer = message.sender)
 				where message.server=$1 and message.peer=$2 order by received`, server.Server, peer.Peer)
 	if err != nil {
-		return nil, ErrInternalServerError(fmt.Errorf("unable to query inbox: %w", err))
+		return nil, secrt.InternalServerError(fmt.Errorf("unable to query inbox: %w", err))
 	}
 
 	defer rows.Close()
@@ -32,7 +32,7 @@ func (server *SecretServer) handleGetInbox(ctx context.Context, _ *EMPTY) (*secr
 		var timestamp time.Time
 		msg := secrt.Message{}
 		if err := rows.Scan(&msg.Message, &msg.Sender, &timestamp, &msg.Metadata); err != nil {
-			return nil, ErrInternalServerError(fmt.Errorf("unable to read inbox: %w", err))
+			return nil, secrt.InternalServerError(fmt.Errorf("unable to read inbox: %w", err))
 		}
 
 		msg.Timestamp = timestamp.Unix()
@@ -42,7 +42,7 @@ func (server *SecretServer) handleGetInbox(ctx context.Context, _ *EMPTY) (*secr
 
 	// 204 just means there's nothing here. No messages!
 	if len(inbox.Messages) == 0 {
-		return nil, ErrNoContent()
+		return nil, secrt.NoContentError()
 	}
 
 	return inbox, nil

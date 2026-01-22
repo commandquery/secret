@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -62,40 +62,9 @@ func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) 
 
 func (endpoint *Endpoint) AddPeer(peerId string) (*Peer, error) {
 
-	endpointURL := endpoint.Path("peer", peerId)
-
-	req, err := http.NewRequest("GET", endpointURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("unexpected error: %w", err)
-	}
-
-	if err = endpoint.SetSignature(req); err != nil {
-		return nil, fmt.Errorf("unable to set signature: %w", err)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("unable to contact server: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("peer %s not found", peerId)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("peer request failed: %s: %s", resp.Status, body)
-	}
-
-	peerjs, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("unable to read peer: %w", err)
-	}
-
 	var peerResp secrt.Peer
-	if err = json.Unmarshal(peerjs, &peerResp); err != nil {
-		return nil, fmt.Errorf("unable to unmarshal peer: %w", err)
+	if err := Call(endpoint, EMPTY, &peerResp, "GET", "peer", peerId); err != nil {
+		return nil, fmt.Errorf("unable to get peer %s: %w", peerId, err)
 	}
 
 	if len(peerResp.PublicKey) != 32 {
@@ -121,6 +90,9 @@ func (endpoint *Endpoint) AddPeer(peerId string) (*Peer, error) {
 // followed by the current timestamp, encrypted for the server itself.
 // This authenticates us to the server within the request header, giving
 // us strong access control without a handshake.
+//
+// The peer ID must be in cleartext because that's how the server finds
+// the public key, which is then used to decrypt the signed object.
 func (endpoint *Endpoint) SetSignature(req *http.Request) error {
 	msg := fmt.Sprintf("%d", time.Now().Unix())
 
@@ -302,48 +274,35 @@ func (endpoint *Endpoint) enrol() error {
 		return fmt.Errorf("unable to solve challenge: %w", err)
 	}
 
-	endpointURL := endpoint.Path("enrol", endpoint.PeerID)
-
 	enrolmentRequest := &secrt.EnrolmentRequest{
 		PublicKey: endpoint.PublicKey,
 	}
 
-	body, err := json.Marshal(enrolmentRequest)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, endpointURL, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Challenge", base64.StdEncoding.EncodeToString(challengeResponse.Challenge))
-	req.Header.Set("Nonce", fmt.Sprintf("%d", challengeResponse.Nonce))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("unable to enrol: %w", err)
-	}
-	defer resp.Body.Close()
-
-	switch resp.StatusCode {
-	case http.StatusOK:
-		fmt.Println("enrolment completed")
-	case http.StatusAccepted:
-		fmt.Println("enrolment requested")
-	case http.StatusConflict:
-		return fmt.Errorf("user already enrolled")
-	default:
-		return fmt.Errorf("unexpected status from server: %s", resp.Status)
-	}
+	var header = make(http.Header)
+	header.Set("Content-Type", "application/json")
+	header.Set("Challenge", base64.StdEncoding.EncodeToString(challengeResponse.Challenge))
+	header.Set("Nonce", fmt.Sprintf("%d", challengeResponse.Nonce))
 
 	var enrolmentResponse secrt.EnrolmentResponse
-	if err := json.NewDecoder(resp.Body).Decode(&enrolmentResponse); err != nil {
-		return fmt.Errorf("unable to read server key: %w", err)
+	request := JSONRequest[*secrt.EnrolmentRequest, secrt.EnrolmentResponse]{
+		ctx:      context.Background(),
+		endpoint: endpoint,
+		method:   http.MethodPost,
+		path:     []string{"enrol", endpoint.PeerID},
+		send:     enrolmentRequest,
+		recv:     &enrolmentResponse,
+		headers:  header,
+	}
+
+	if err = JSONCall(&request); err != nil {
+		return fmt.Errorf("unable to enrol: %w", err)
 	}
 
 	endpoint.ServerKey = enrolmentResponse.ServerKey
+
+	if !enrolmentResponse.Activated {
+		fmt.Println("please check your email for an activation code")
+	}
+
 	return nil
 }

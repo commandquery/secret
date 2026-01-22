@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"log"
+
+	"github.com/commandquery/secrt"
 )
 
-func (server *SecretServer) handleInvite(ctx context.Context, _ *EMPTY) (*EMPTY, *HTTPError) {
+func (server *SecretServer) handleInvite(ctx context.Context, _ *EMPTY) (*EMPTY, *secrt.HTTPError) {
 	r := GetRequest(ctx)
 	_, aerr := server.Authenticate(r)
 	if aerr != nil {

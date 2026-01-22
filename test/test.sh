@@ -32,6 +32,7 @@ rm -f *.json
 
 # Use a small challenge size to keep tests snappy.
 export SECRT_CHALLENGE_SIZE=10
+export SECRT_AUTO_ENROL=true
 
 secrtd add localhost
 
@@ -110,7 +111,7 @@ secrt -c charlie.json ls -l
 # Since Charlie doesn't accept peers, she shouldn't be able to send to alice.
 #
 echo "--- secrt send (acceptPeers=false)"
-if secrt -c alice.json send ./secrt charlie@example.com 2> /dev/null; then
+if secrt -c charlie.json send ./TEST.md alice@example.com 2> /dev/null; then
   echo "secrt send should have failed!" 1>&2
   exit 1
 fi

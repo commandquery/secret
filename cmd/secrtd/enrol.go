@@ -44,22 +44,22 @@ func (server *SecretServer) verifyChallenge(r *http.Request) error {
 	// enrolment requires a challenge and nonce header.
 	challenge64 := r.Header.Get("Challenge")
 	if challenge64 == "" {
-		return ErrForbidden(fmt.Errorf("no challenge provided"))
+		return secrt.ForbiddenError(fmt.Errorf("no challenge provided"))
 	}
 
 	nonceStr := r.Header.Get("Nonce")
 	if nonceStr == "" {
-		return ErrForbidden(fmt.Errorf("no nonce provided"))
+		return secrt.ForbiddenError(fmt.Errorf("no nonce provided"))
 	}
 
 	challenge, err := base64.StdEncoding.DecodeString(challenge64)
 	if err != nil {
-		return ErrBadRequest(fmt.Errorf("invalid challenge encoding: %w", err))
+		return secrt.BadRequestError(fmt.Errorf("invalid challenge encoding: %w", err))
 	}
 
 	nonce, err := strconv.ParseUint(nonceStr, 10, 64)
 	if err != nil {
-		return ErrBadRequest(fmt.Errorf("invalid nonce encoding: %w", err))
+		return secrt.BadRequestError(fmt.Errorf("invalid nonce encoding: %w", err))
 	}
 
 	challengeResponse := &secrt.ChallengeResponse{
@@ -68,7 +68,7 @@ func (server *SecretServer) verifyChallenge(r *http.Request) error {
 	}
 
 	if err = secrt.ValidateResponse(challengeResponse, server.PublicSignKey); err != nil {
-		return ErrForbidden(fmt.Errorf("invalid challenge solution: %w", err))
+		return secrt.ForbiddenError(fmt.Errorf("invalid challenge solution: %w", err))
 	}
 
 	return nil
@@ -97,12 +97,12 @@ func (server *SecretServer) verifyEnrolment(w http.ResponseWriter, r *http.Reque
 // Server processes enrolment request and sets status based on results.
 
 // Enrollment accepts a key from the client, and returns the server key.
-func (server *SecretServer) handleEnrol(ctx context.Context, req *secrt.EnrolmentRequest) (*secrt.EnrolmentResponse, *HTTPError) {
+func (server *SecretServer) handleEnrol(ctx context.Context, req *secrt.EnrolmentRequest) (*secrt.EnrolmentResponse, *secrt.HTTPError) {
 
 	r := GetRequest(ctx)
 
 	if err := server.verifyChallenge(r); err != nil {
-		return nil, ErrForbidden(err)
+		return nil, secrt.ForbiddenError(err)
 	}
 
 	peerID := r.PathValue("peer")
@@ -110,22 +110,30 @@ func (server *SecretServer) handleEnrol(ctx context.Context, req *secrt.Enrolmen
 
 	enrolmentUrl, code, err := server.makeEnrolmentURL(GetHostname(r), peerID, req.PublicKey)
 	if err != nil {
-		return nil, ErrInternalServerError(err)
+		return nil, secrt.InternalServerError(err)
 	}
 
 	log.Println("url:", enrolmentUrl)
 	log.Println("code:", code)
 
+	if !Config.AutoEnrol {
+		return &secrt.EnrolmentResponse{
+			ServerKey: server.PublicBoxKey,
+			Activated: false,
+		}, nil
+	}
+
 	if _, err := server.enrolUser(peerID, req.PublicKey); err != nil {
 		if errors.Is(err, ErrExistingPeer) {
-			return nil, ErrConflict(fmt.Errorf("peer %s already enrolled", peerID))
+			return nil, secrt.ConflictError(fmt.Errorf("peer %s already enrolled", peerID))
 		}
 
-		return nil, ErrInternalServerError(err)
+		return nil, secrt.InternalServerError(err)
 	}
 
 	return &secrt.EnrolmentResponse{
 		ServerKey: server.PublicBoxKey,
+		Activated: true,
 	}, nil
 }
 
@@ -145,19 +153,19 @@ func (server *SecretServer) makeEnrolmentURL(hostname string, alias string, publ
 	return "https://" + hostname + "/validate/?t=" + base64.URLEncoding.EncodeToString(sealedToken), enrolmentToken.Code, nil
 }
 
-func (server *SecretServer) handleValidate(ctx context.Context, req *secrt.ValidationRequest) (*secrt.ValidationResponse, *HTTPError) {
+func (server *SecretServer) handleActivate(ctx context.Context, req *secrt.ActivationRequest) (*secrt.ValidationResponse, *secrt.HTTPError) {
 	sealedToken, err := base64.URLEncoding.DecodeString(req.Token)
 	if err != nil {
-		return nil, ErrBadRequest(err)
+		return nil, secrt.BadRequestError(err)
 	}
 
 	enrolmentToken, err := decrypt[EnrolmentToken](server, sealedToken)
 	if err != nil {
-		return nil, ErrBadRequest(err)
+		return nil, secrt.BadRequestError(err)
 	}
 
 	if req.Code != enrolmentToken.Code {
-		return nil, ErrForbidden(fmt.Errorf("enrolment token code does not match request"))
+		return nil, secrt.ForbiddenError(fmt.Errorf("enrolment token code does not match request"))
 	}
 
 	log.Println("got valid enrolment request for", enrolmentToken.Peer)

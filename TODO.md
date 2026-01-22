@@ -3,10 +3,9 @@
 
 ## Client
 
-- [ ] some nice JSON wrappers for sending and receiving JSON
-- [ ] client should use a http.Client (not http.DefaultClient) that has reasonable timeouts
+- [ ] need to integrate Cobra cli thing.
+- [ ] consider hashcash for all calls
 - [ ] defer "adding new peer" messages to client exit
-- [X] client should always print the full UUID. you can optionally just use the prefix.
 - [ ] enrolment workflow 
   - [ ] enrolment messages (to the CLI) should come from the server!
     - allows custom welcome messages for server owners
@@ -17,6 +16,7 @@
   - [X] client should JSON to server with public key instead of binary (allows extension later)
   - [X] handleEnrol should return server public key as JSON instead of binary (allows extension later)
   - [ ] clicking on email agrees to T&Cs -OR- does the download/license cover it?
+- [ ] how to deal with public key changes
 - [ ] how to prevent unwanted messages / spam? block user until authorised? block/report address?
   - [ ] require invite
   - [ ] needs block lists
@@ -27,15 +27,18 @@
 
 ## Server
 
-- [ ] finish converting handlers to use dispatchJS
-- [ ] finish token validation -> actual enrolment
+- [ ] finish account activation -> actual enrolment via email
+- [ ] upon activation, server should send a secret to the client.
+  - [ ] this means the server needs to be a peer!
+- [ ] need server-side message size limits
 - [ ] need to use LogError instead of WriteStatus in http handlers (instead of _ = WriteStatus(...))
 - [ ] need to automatically purge old messages from SQL
 - [ ] need maximum message size limits in dispatchJS (http.MaxBytesReader) and configurable (lower) limits in handlePostMessage 
 - [ ] email enrolment verification (if required and available with server config)
 - [ ] secrt.io website.
 - [ ] deploy as an actual service (kill the version running at emersion)
-- [ ] quota support: daily limits, message size limits, timezone, secret linger time
+- [ ] quota support: daily limits, message size limits, timezone, secret linger time, invites
+- [ ] invite limits - count goes down if an invited peer joins
 - [ ] some kind of usage limits / AUP / rate limiting - a byte limit would satisfy my problem with nasty material
 - [ ] make available in homebrew
 - [ ] web site
@@ -107,3 +110,7 @@
 - [X] test that sending to an unknown peer doesn't crash the server (!)
 - [X] some nice JSON wrappers for sending and receiving JSON - readJSON and writeJSON generics?
 - [X] replace http.ServeFunc with ?? ServeAPI[T] ?
+- [X] finish converting handlers to use dispatchJS
+- [X] some nice JSON wrappers for sending and receiving JSON
+- [X] client should use a http.Client (not http.DefaultClient) that has reasonable timeouts
+- [X] client should always print the full UUID. you can optionally just use the prefix.

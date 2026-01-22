@@ -6,10 +6,10 @@ import (
 	"github.com/commandquery/secrt"
 )
 
-func (server *SecretServer) handleGetChallenge(ctx context.Context, _ *EMPTY) (*secrt.ChallengeRequest, *HTTPError) {
+func (server *SecretServer) handleGetChallenge(ctx context.Context, _ *EMPTY) (*secrt.ChallengeRequest, *secrt.HTTPError) {
 	challengeRequest, err := secrt.NewChallenge(Config.ChallengeSize, server.PrivateSignKey)
 	if err != nil {
-		return nil, ErrInternalServerError(err)
+		return nil, secrt.InternalServerError(err)
 	}
 
 	return challengeRequest, nil
