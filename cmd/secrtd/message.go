@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )
@@ -25,8 +27,7 @@ type Message struct {
 	Payload     []byte
 }
 
-func (server *SecretServer) handlePostMessage(ctx context.Context, envelope *secrt.SendRequest) (*secrt.SendResponse, *secrt.HTTPError) {
-	r := GetRequest(ctx)
+func (server *SecretServer) handlePostMessage(r *http.Request, envelope *secrt.SendRequest) (*secrt.SendResponse, error) {
 	sender, aerr := server.Authenticate(r)
 	if aerr != nil {
 		return nil, aerr
@@ -34,12 +35,12 @@ func (server *SecretServer) handlePostMessage(ctx context.Context, envelope *sec
 
 	recipientID := r.PathValue("recipient")
 	if recipientID == "" {
-		return nil, secrt.BadRequestError(fmt.Errorf("missing recipient"))
+		return nil, jtp.BadRequestError(fmt.Errorf("missing recipient"))
 	}
 
 	recipient, ok := server.GetPeer(recipientID)
 	if !ok {
-		return nil, secrt.NotFoundError(fmt.Errorf("recipient not found"))
+		return nil, jtp.NotFoundError(fmt.Errorf("recipient not found"))
 	}
 
 	newMessage := &Message{
@@ -53,10 +54,10 @@ func (server *SecretServer) handlePostMessage(ctx context.Context, envelope *sec
 		Payload:     envelope.Payload,
 	}
 
-	_, err := PGXPool.Exec(ctx, "insert into secrt.message (server, peer, message, sender, received, metadata, payload) values ($1, $2, $3, $4, $5, $6, $7)",
+	_, err := PGXPool.Exec(r.Context(), "insert into secrt.message (server, peer, message, sender, received, metadata, payload) values ($1, $2, $3, $4, $5, $6, $7)",
 		newMessage.Server, newMessage.Peer, newMessage.Message, newMessage.Sender, newMessage.Received, envelope.Metadata, envelope.Payload)
 	if err != nil {
-		return nil, secrt.InternalServerError(fmt.Errorf("unable to insert message: %w", err))
+		return nil, jtp.InternalServerError(fmt.Errorf("unable to insert message: %w", err))
 	}
 
 	//recipient.AddMessage(newMessage)
@@ -68,10 +69,7 @@ func (server *SecretServer) handlePostMessage(ctx context.Context, envelope *sec
 	}, nil
 }
 
-func (server *SecretServer) handleGetMessage(ctx context.Context, _ *EMPTY) (*secrt.Message, *secrt.HTTPError) {
-
-	//func (server *SecretServer) handleGetMessage(w http.ResponseWriter, r *http.Request) {
-	r := GetRequest(ctx)
+func (server *SecretServer) handleGetMessage(r *http.Request, _ *jtp.None) (*secrt.Message, error) {
 	peer, aerr := server.Authenticate(r)
 	if aerr != nil {
 		return nil, aerr
@@ -79,18 +77,18 @@ func (server *SecretServer) handleGetMessage(ctx context.Context, _ *EMPTY) (*se
 
 	id := r.PathValue("id")
 	if len(id) != 8 && len(id) != 36 {
-		return nil, secrt.BadRequestError(fmt.Errorf("invalid message id"))
+		return nil, jtp.BadRequestError(fmt.Errorf("invalid message id"))
 	}
 
 	msg, err := GetMessage(peer, id)
 	if err != nil {
 		if errors.Is(err, ErrUnknownMessageID) {
-			return nil, secrt.NotFoundError(err)
+			return nil, jtp.NotFoundError(err)
 		}
 		if errors.Is(err, ErrAmbiguousMessageID) {
-			return nil, secrt.BadRequestError(err)
+			return nil, jtp.BadRequestError(err)
 		}
-		return nil, secrt.InternalServerError(fmt.Errorf("error while retrieving message: %w", err))
+		return nil, jtp.InternalServerError(fmt.Errorf("error while retrieving message: %w", err))
 	}
 
 	return &secrt.Message{
@@ -102,9 +100,7 @@ func (server *SecretServer) handleGetMessage(ctx context.Context, _ *EMPTY) (*se
 	}, nil
 }
 
-func (server *SecretServer) handleDeleteMessage(ctx context.Context, _ *EMPTY) (*EMPTY, *secrt.HTTPError) {
-	//func (server *SecretServer) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
-	r := GetRequest(ctx)
+func (server *SecretServer) handleDeleteMessage(r *http.Request, _ *jtp.None) (*jtp.None, error) {
 	peer, aerr := server.Authenticate(r)
 	if aerr != nil {
 		return nil, aerr
@@ -112,21 +108,21 @@ func (server *SecretServer) handleDeleteMessage(ctx context.Context, _ *EMPTY) (
 
 	id := r.PathValue("id")
 	if len(id) != 8 && len(id) != 36 {
-		return nil, secrt.BadRequestError(fmt.Errorf("invalid message id"))
+		return nil, jtp.BadRequestError(fmt.Errorf("invalid message id"))
 	}
 
 	msg, err := GetMessage(peer, id)
 	if err != nil {
 		if errors.Is(err, ErrUnknownMessageID) {
-			return nil, secrt.NotFoundError(err)
+			return nil, jtp.NotFoundError(err)
 		}
 		if errors.Is(err, ErrAmbiguousMessageID) {
-			return nil, secrt.BadRequestError(err)
+			return nil, jtp.BadRequestError(err)
 		}
 	}
 
 	if err = msg.Delete(); err != nil {
-		return nil, secrt.InternalServerError(fmt.Errorf("unable to delete message: %w", err))
+		return nil, jtp.InternalServerError(fmt.Errorf("unable to delete message: %w", err))
 	}
 
 	return nil, nil

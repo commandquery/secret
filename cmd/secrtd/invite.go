@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
 	"log"
+	"net/http"
 
-	"github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 )
 
-func (server *SecretServer) handleInvite(ctx context.Context, _ *EMPTY) (*EMPTY, *secrt.HTTPError) {
-	r := GetRequest(ctx)
+func (server *SecretServer) handleInvite(r *http.Request, _ *jtp.None) (*jtp.None, error) {
 	_, aerr := server.Authenticate(r)
 	if aerr != nil {
 		return nil, aerr

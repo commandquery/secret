@@ -16,12 +16,27 @@ import (
 	"time"
 
 	"github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 	"golang.org/x/crypto/nacl/box"
 )
 
 var ErrUnknownPeer error = errors.New("unknown peer")
 var ErrExistingEnrolment error = errors.New("already enrolled")
 var ErrSecretTooBig error = errors.New("secret too big")
+
+// Call sends a JSON object and receives a JSON response. It's a convenience method that
+// creates a JSONRequest and calls it. The intent is that most calls should use
+// this method, but some requests are more complex and require additional settings
+// (unsigned requests, headers, etc).
+func Call[S any, R any](endpoint *Endpoint, s *S, r *R, method string, path ...string) error {
+
+	headers, err := endpoint.GetSignature()
+	if err != nil {
+		return fmt.Errorf("unable to set signature: %w", err)
+	}
+
+	return jtp.Call(method, endpoint.Path(path...), headers, s, r)
+}
 
 // Path returns a path URL relative to the endpoint.
 func (endpoint *Endpoint) Path(path ...string) string {
@@ -63,7 +78,7 @@ func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) 
 func (endpoint *Endpoint) AddPeer(peerId string) (*Peer, error) {
 
 	var peerResp secrt.Peer
-	if err := Call(endpoint, EMPTY, &peerResp, "GET", "peer", peerId); err != nil {
+	if err := Call(endpoint, jtp.Nil, &peerResp, "GET", "peer", peerId); err != nil {
 		return nil, fmt.Errorf("unable to get peer %s: %w", peerId, err)
 	}
 
@@ -86,19 +101,19 @@ func (endpoint *Endpoint) AddPeer(peerId string) (*Peer, error) {
 	return peer, nil
 }
 
-// SetSignature returns a Signature header, which is just the peer ID
+// GetSignature returns a Signature header, which is just the peer ID
 // followed by the current timestamp, encrypted for the server itself.
 // This authenticates us to the server within the request header, giving
 // us strong access control without a handshake.
 //
 // The peer ID must be in cleartext because that's how the server finds
 // the public key, which is then used to decrypt the signed object.
-func (endpoint *Endpoint) SetSignature(req *http.Request) error {
+func (endpoint *Endpoint) GetSignature() (http.Header, error) {
 	msg := fmt.Sprintf("%d", time.Now().Unix())
 
 	ciphertext, err := endpoint.Encrypt([]byte(msg), endpoint.ServerKey)
 	if err != nil {
-		return fmt.Errorf("unable to generate signature: %w", err)
+		return nil, fmt.Errorf("unable to generate signature: %w", err)
 	}
 
 	// entire signature is json encoded to avoid issues with little bobby table's peer ID.
@@ -109,11 +124,12 @@ func (endpoint *Endpoint) SetSignature(req *http.Request) error {
 
 	js, err := json.Marshal(signature)
 	if err != nil {
-		return fmt.Errorf("unable to marshal signature: %w", err)
+		return nil, fmt.Errorf("unable to marshal signature: %w", err)
 	}
 
-	req.Header.Set("Signature", base64.StdEncoding.EncodeToString(js))
-	return nil
+	var header http.Header = make(http.Header)
+	header.Set("Signature", base64.StdEncoding.EncodeToString(js))
+	return header, nil
 }
 
 // readInput reads a byte slice from a file or stdin. If the filename is "", read from stdin.
@@ -284,17 +300,17 @@ func (endpoint *Endpoint) enrol() error {
 	header.Set("Nonce", fmt.Sprintf("%d", challengeResponse.Nonce))
 
 	var enrolmentResponse secrt.EnrolmentResponse
-	request := JSONRequest[*secrt.EnrolmentRequest, secrt.EnrolmentResponse]{
-		ctx:      context.Background(),
-		endpoint: endpoint,
-		method:   http.MethodPost,
-		path:     []string{"enrol", endpoint.PeerID},
-		send:     enrolmentRequest,
-		recv:     &enrolmentResponse,
-		headers:  header,
+	request := jtp.Request[*secrt.EnrolmentRequest, secrt.EnrolmentResponse]{
+		Ctx: context.Background(),
+		//endpoint: endpoint,
+		Method:  http.MethodPost,
+		URL:     endpoint.Path("enrol", endpoint.PeerID),
+		Send:    &enrolmentRequest,
+		Recv:    &enrolmentResponse,
+		Headers: header,
 	}
 
-	if err = JSONCall(&request); err != nil {
+	if err = jtp.DoRequest(&request); err != nil {
 		return fmt.Errorf("unable to enrol: %w", err)
 	}
 

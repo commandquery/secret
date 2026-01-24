@@ -17,7 +17,7 @@ createdb $PGDATABASE
 
 
 cleanup() {
-    kill "$server" 2>/dev/null
+    kill "$SECRTD" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -32,12 +32,12 @@ rm -f *.json
 
 # Use a small challenge size to keep tests snappy.
 export SECRT_CHALLENGE_SIZE=10
-export SECRT_AUTO_ENROL=true
+export SECRT_ENROL_ACTION=auto
 
 secrtd add localhost
 
 secrtd &
-server=$!
+SECRTD=$!
 
 sleep 2
 
@@ -68,10 +68,10 @@ fi
 
 #
 # Test that sending to an unknown peer fails
-# This caused a panic in an early server version!
-# If the server panics now, subsequent tests will fail.
+# This caused a panic in an early SECRTD version!
+# If the SECRTD panics now, subsequent tests will fail.
 #
-echo "--- secrt send from harry using guy.json default server"
+echo "--- send to unknown peer"
 if echo "hello" | secrt -c alice.json send nobody@example.com 2>/dev/null; then
   echo "secrt send to nobody@example.com should have failed!" 2>&1
   exit 1
@@ -254,22 +254,47 @@ if secrt -c guy.json enrol guy@example.com http://localhost:8080/ 2> /dev/null; 
 fi
 
 #
-# Attempt to enrol on same server with different peer ID
+# Attempt to enrol on same SECRTD with different peer ID
 #
-echo "--- secrt same server different peer"
+echo "--- secrt same SECRTD different peer"
 secrt -c guy.json enrol harry@example.com http://localhost:8080/
 
 #
 # Test that the default endpoint changes
 #
-echo "--- secrt send from harry using guy.json default server"
+echo "--- use different enrolment"
 echo "hello" | secrt -c guy.json send alice@example.com
 secrt -c alice.json ls
+
+#
+# Test non-automatic-enrolment
+#
+kill $SECRTD
+export SECRT_ENROL_ACTION=file
+export SECRT_ENROL_FILE=token.txt
+secrtd &
+SECRTD=$!
+sleep 2
+
+secrt -c iris.json enrol iris@example.com http://localhost:8080/
+read -r token code < <(tail -1 token.txt)
+secrt -c iris.json activate "$token" "$code"
+
+#
+# make sure the enrolment worked
+#
+MSGID=$(echo "iris" | secrt -c iris.json send alice@example.com)
+MSG=$(secrt -c alice.json get $MSGID)
+if [ "$MSG" != "iris" ]; then
+  echo "expected iris" 1>&2
+  exit 1
+fi
+
 
 
 #
 # Attempt to double enrol with --force
-# FIXME: this won't work until we have a reenrolment flow on the server side
+# FIXME: this won't work until we have a reenrolment flow on the SECRTD side
 #
 #echo "--- secrt double enrol --force"
 #secrt -c guy.json enrol --force guy@example.com http://localhost:8080/

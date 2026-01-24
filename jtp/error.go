@@ -1,4 +1,4 @@
-package secrt
+package jtp
 
 import (
 	"fmt"
@@ -28,6 +28,9 @@ func (e *HTTPError) Error() string {
 }
 
 func (e *HTTPError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
 	return e.Err
 }
 

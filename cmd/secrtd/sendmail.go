@@ -15,13 +15,33 @@ const SMTP_PASSWORD = "30fe41f5-c222-42c3-9258-5bee39bba4d5"
 const SMTP_HEADER_KEY = "X-PM-Message-Stream"
 const SMTP_HEADER_VALUE = "outbound"
 
-const validationMessage = `
-hi! thanks for trying secrt. secrt is a command line tool for sending secrets.
+var ActivateMailChannel = make(chan *ActivationToken, 16)
 
-to activate your account, please copy and paste this into your command line:
+const activationEmail = `
+hi! thanks for trying secrt.
+
+to activate your account, please copy and paste this whole command into your command line:
 
 	secrt activate {{.Token}} {{.Code}}
+
+secrt is a command line tool for sending secrets to coworkers, friends,
+and people who need to know. you can find out more about secrt by visiting
+our web site: https://secrt.io/
 `
+
+func startMailPoller(replicas int) {
+	for range replicas {
+		go mailPoller()
+	}
+}
+
+func mailPoller() {
+	for token := range ActivateMailChannel {
+		if err := sendmail(activationEmail, token); err != nil {
+			log.Println("unable to send activation email:", err)
+		}
+	}
+}
 
 func sendmail(msg string, values any) error {
 	tmpl, err := template.New("email").Parse(msg)

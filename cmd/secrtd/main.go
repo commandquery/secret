@@ -33,6 +33,9 @@ func main() {
 	mustInitPGX()
 	mustInitPgpkg()
 
+	// start as many mail pollers as you like, to increase concurrency.
+	startMailPoller(2)
+
 	if len(os.Args) == 3 && os.Args[1] == "add" {
 		err := addServerCmd(os.Args[2])
 		if err != nil {

@@ -91,7 +91,7 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 	for i, request := range sendRequests {
 		var sendResponse secrt.SendResponse
 
-		err = Call(endpoint, request, &sendResponse, "POST", "message", peerList[i])
+		err = Call(endpoint, &request, &sendResponse, "POST", "message", peerList[i])
 		if err != nil {
 			sendErrors = append(sendErrors, err)
 		} else {

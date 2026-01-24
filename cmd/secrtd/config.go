@@ -1,9 +1,17 @@
 package main
 
 import (
+	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/kelseyhightower/envconfig"
+)
+
+const (
+	EnrolAuto = "auto"
+	EnrolFile = "file"
+	EnrolMail = "mail"
 )
 
 var Config struct {
@@ -13,7 +21,8 @@ var Config struct {
 	ChallengeSize    int    `split_words:"true" default:"20"` // Incrementing by 1 *doubles* the complexity
 	PathPrefix       string `split_words:"true" default:"/"`
 	ServerConfigPath string `split_words:"true" default:"./server.json"`
-	AutoEnrol        bool   `split_words:"true" default:"false"`
+	EnrolAction      string `split_words:"true" default:"mail"` // What to do for enrolment requests
+	EnrolFile        string `split_words:"true"`                // Optional filename
 }
 
 func initConfig() error {
@@ -23,6 +32,14 @@ func initConfig() error {
 
 	if !strings.HasSuffix(Config.PathPrefix, "/") {
 		Config.PathPrefix += "/"
+	}
+
+	if !slices.Contains([]string{EnrolAuto, EnrolFile, EnrolMail}, Config.EnrolAction) {
+		return fmt.Errorf("invalid enrolment action: %s", Config.EnrolAction)
+	}
+
+	if Config.EnrolAction == EnrolFile && Config.EnrolFile == "" {
+		return fmt.Errorf("SECRT_ENROL_ACTION is 'file' but no SECRT_ENROL_FILE is specified")
 	}
 
 	return nil

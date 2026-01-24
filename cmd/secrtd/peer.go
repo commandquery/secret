@@ -1,12 +1,13 @@
 package main
 
 import (
-	"context"
 	"encoding/binary"
 	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 	"github.com/google/uuid"
 )
 
@@ -29,9 +30,7 @@ func uuidBoundsFromPrefix(prefix uint32) (lower, upper uuid.UUID) {
 	return lower, upper
 }
 
-func (server *SecretServer) handleGetPeer(ctx context.Context, _ *EMPTY) (*secrt.Peer, *secrt.HTTPError) {
-
-	r := GetRequest(ctx)
+func (server *SecretServer) handleGetPeer(r *http.Request, _ *jtp.None) (*secrt.Peer, error) {
 
 	if _, err := server.Authenticate(r); err != nil {
 		return nil, err
@@ -39,12 +38,12 @@ func (server *SecretServer) handleGetPeer(ctx context.Context, _ *EMPTY) (*secrt
 
 	peerID := r.PathValue("peer")
 	if peerID == "" {
-		return nil, secrt.BadRequestError(fmt.Errorf("missing peer parameter"))
+		return nil, jtp.BadRequestError(fmt.Errorf("missing peer parameter"))
 	}
 
 	peer, ok := server.GetPeer(peerID)
 	if !ok {
-		return nil, secrt.NotFoundError(fmt.Errorf("peer not found"))
+		return nil, jtp.NotFoundError(fmt.Errorf("peer not found"))
 	}
 
 	return &secrt.Peer{

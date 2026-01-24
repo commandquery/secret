@@ -3,7 +3,6 @@
 
 ## Client
 
-- [ ] need to integrate Cobra cli thing.
 - [ ] consider hashcash for all calls
 - [ ] defer "adding new peer" messages to client exit
 - [ ] enrolment workflow 

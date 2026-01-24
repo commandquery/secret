@@ -92,5 +92,6 @@ type ActivationRequest struct {
 	Code  int    `json:"code"`
 }
 
-type ValidationResponse struct {
+type ActivationResponse struct {
+	Message string `json:"message"`
 }

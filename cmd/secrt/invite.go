@@ -4,6 +4,7 @@ import (
 	"flag"
 
 	"github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 )
 
 func CmdInvite(config *Config, endpoint *Endpoint, args []string) error {
@@ -18,5 +19,5 @@ func CmdInvite(config *Config, endpoint *Endpoint, args []string) error {
 		secrt.Usage("secret invite user@domain")
 	}
 
-	return Call(endpoint, EMPTY, EMPTY, "POST", "invite", args[0])
+	return Call(endpoint, jtp.Nil, jtp.Nil, "POST", "invite", args[0])
 }

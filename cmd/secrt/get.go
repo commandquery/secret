@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 )
 
 // CmdGet gets a secret. You can use either the short, 8-character UUID, or the full UUID
@@ -24,7 +25,7 @@ func CmdGet(config *Config, endpoint *Endpoint, args []string) error {
 	}
 
 	var message secrt.Message
-	if err := Call(endpoint, EMPTY, &message, "GET", "message", args[0]); err != nil {
+	if err := Call(endpoint, jtp.Nil, &message, "GET", "message", args[0]); err != nil {
 		return fmt.Errorf("unable to get message %s: %w", args[0], err)
 	}
 

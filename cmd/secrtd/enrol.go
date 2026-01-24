@@ -4,28 +4,30 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"log"
 	"math/rand/v2"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 	"github.com/google/uuid"
 )
 
-func (server *SecretServer) enrolUser(alias string, peerKey []byte) (uuid.UUID, error) {
+func (server *SecretServer) enrolUser(alias string, peerKey []byte) error {
 	// never override an existing peer's public key.
 	existingUser, ok := server.GetPeer(alias)
 	if ok {
 		// peer can re-enrol with their existing public key.
 		if bytes.Equal(existingUser.PublicKey, peerKey) {
-			return uuid.Nil, nil
+			return nil
 		}
 
 		// a new public key requires a reauthentication process which we don't have now.
-		return uuid.Nil, ErrExistingPeer
+		//return uuid.Nil, ErrExistingPeer
+		return jtp.ConflictError(ErrExistingPeer)
 	}
 
 	ctx := context.Background()
@@ -33,10 +35,10 @@ func (server *SecretServer) enrolUser(alias string, peerKey []byte) (uuid.UUID, 
 	_, err := PGXPool.Exec(ctx, "insert into secrt.peer (server, peer, alias, public_box_key) values ($1, $2, $3, $4)",
 		server.Server, peerID, alias, peerKey)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("unable to enrol user %s: %w", alias, err)
+		return jtp.InternalServerError(fmt.Errorf("unable to enrol user %s: %w", alias, err))
 	}
 
-	return peerID, nil
+	return nil
 }
 
 // Verify the challenge. If the challenge is invalid, set the HTTP request status and return an error.
@@ -44,22 +46,22 @@ func (server *SecretServer) verifyChallenge(r *http.Request) error {
 	// enrolment requires a challenge and nonce header.
 	challenge64 := r.Header.Get("Challenge")
 	if challenge64 == "" {
-		return secrt.ForbiddenError(fmt.Errorf("no challenge provided"))
+		return jtp.ForbiddenError(fmt.Errorf("no challenge provided"))
 	}
 
 	nonceStr := r.Header.Get("Nonce")
 	if nonceStr == "" {
-		return secrt.ForbiddenError(fmt.Errorf("no nonce provided"))
+		return jtp.ForbiddenError(fmt.Errorf("no nonce provided"))
 	}
 
 	challenge, err := base64.StdEncoding.DecodeString(challenge64)
 	if err != nil {
-		return secrt.BadRequestError(fmt.Errorf("invalid challenge encoding: %w", err))
+		return jtp.BadRequestError(fmt.Errorf("invalid challenge encoding: %w", err))
 	}
 
 	nonce, err := strconv.ParseUint(nonceStr, 10, 64)
 	if err != nil {
-		return secrt.BadRequestError(fmt.Errorf("invalid nonce encoding: %w", err))
+		return jtp.BadRequestError(fmt.Errorf("invalid nonce encoding: %w", err))
 	}
 
 	challengeResponse := &secrt.ChallengeResponse{
@@ -68,77 +70,83 @@ func (server *SecretServer) verifyChallenge(r *http.Request) error {
 	}
 
 	if err = secrt.ValidateResponse(challengeResponse, server.PublicSignKey); err != nil {
-		return secrt.ForbiddenError(fmt.Errorf("invalid challenge solution: %w", err))
+		return jtp.ForbiddenError(fmt.Errorf("invalid challenge solution: %w", err))
 	}
 
 	return nil
 }
 
-// Verify enrolment of the user. The actual process used to verify enrolment might change based on the
-// server configuration. For example, enrolment may require both a specific domain and an email validation.
-func (server *SecretServer) verifyEnrolment(w http.ResponseWriter, r *http.Request) {
-	//if err = sendmail(); err != nil {
-	//	log.Println("unable to send mail:", err)
-	//	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-	//	return
-	//}
-
-	//if err = pollVerification(); err != nil {
-	//	...
-	//}
+type ActivationToken struct {
+	Peer  string
+	Token string
+	Code  int
 }
 
-// The Enrolment process is straightforward:
-// Client requests a hashcash challenge from the server
-// Client presents a solution to the server, along with the enrolment request (server ID, peer ID and public key)
-// Server creates a record for the peer (status=pending) and returns success (along with its public key).
-// Server starts the validation sequence in the background
-// Client polls (server ID, peerID, publicKey) until it gets success/failure
-// Server processes enrolment request and sets status based on results.
+func (server *SecretServer) sendActivationToken(token *ActivationToken) error {
+	log.Println("sending token:", token.Token)
+	log.Println("activation code:", token.Code)
+
+	switch Config.EnrolAction {
+	case EnrolMail:
+		// Queue the email up
+		ActivateMailChannel <- token
+	case EnrolFile:
+		// File is used only in testing.
+		f, err := os.OpenFile(Config.EnrolFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Println("error opening enrolment file:", err)
+		}
+
+		defer f.Close()
+
+		_, err = fmt.Fprintf(f, "%s %06d\n", token.Token, token.Code)
+		if err != nil {
+			log.Println("error writing to enrolment file:", err)
+		}
+	}
+
+	return nil
+}
 
 // Enrollment accepts a key from the client, and returns the server key.
-func (server *SecretServer) handleEnrol(ctx context.Context, req *secrt.EnrolmentRequest) (*secrt.EnrolmentResponse, *secrt.HTTPError) {
-
-	r := GetRequest(ctx)
+func (server *SecretServer) handleEnrol(r *http.Request, req *secrt.EnrolmentRequest) (*secrt.EnrolmentResponse, error) {
 
 	if err := server.verifyChallenge(r); err != nil {
-		return nil, secrt.ForbiddenError(err)
+		return nil, jtp.ForbiddenError(err)
 	}
 
 	peerID := r.PathValue("peer")
 	log.Printf("challenge response accepted for enrolment request from peer %s", peerID)
 
-	enrolmentUrl, code, err := server.makeEnrolmentURL(GetHostname(r), peerID, req.PublicKey)
-	if err != nil {
-		return nil, secrt.InternalServerError(err)
-	}
+	// EnrolAction is only enabled for testing. It's never enabled in production.
+	if Config.EnrolAction == EnrolAuto {
+		if err := server.enrolUser(peerID, req.PublicKey); err != nil {
+			return nil, err
+		}
 
-	log.Println("url:", enrolmentUrl)
-	log.Println("code:", code)
-
-	if !Config.AutoEnrol {
 		return &secrt.EnrolmentResponse{
 			ServerKey: server.PublicBoxKey,
-			Activated: false,
+			Activated: true,
 		}, nil
 	}
 
-	if _, err := server.enrolUser(peerID, req.PublicKey); err != nil {
-		if errors.Is(err, ErrExistingPeer) {
-			return nil, secrt.ConflictError(fmt.Errorf("peer %s already enrolled", peerID))
-		}
+	token, err := server.makeActivationToken(peerID, req.PublicKey)
+	if err != nil {
+		return nil, jtp.InternalServerError(err)
+	}
 
-		return nil, secrt.InternalServerError(err)
+	if err = server.sendActivationToken(token); err != nil {
+		return nil, jtp.InternalServerError(err)
 	}
 
 	return &secrt.EnrolmentResponse{
 		ServerKey: server.PublicBoxKey,
-		Activated: true,
+		Activated: false,
 	}, nil
 }
 
 // Encode the enrolment details into a URL. Note that we use URLEncoding for this.
-func (server *SecretServer) makeEnrolmentURL(hostname string, alias string, publicKey []byte) (string, int, error) {
+func (server *SecretServer) makeActivationToken(alias string, publicKey []byte) (*ActivationToken, error) {
 	enrolmentToken := &EnrolmentToken{
 		Peer:      alias,
 		PublicKey: publicKey,
@@ -147,28 +155,38 @@ func (server *SecretServer) makeEnrolmentURL(hostname string, alias string, publ
 
 	sealedToken, err := encrypt(server, enrolmentToken)
 	if err != nil {
-		return "", 0, fmt.Errorf("failed to encrypt enrolment token: %v", err)
+		return nil, fmt.Errorf("failed to encrypt enrolment token: %v", err)
 	}
 
-	return "https://" + hostname + "/validate/?t=" + base64.URLEncoding.EncodeToString(sealedToken), enrolmentToken.Code, nil
+	return &ActivationToken{
+		Peer:  alias,
+		Token: base64.URLEncoding.EncodeToString(sealedToken),
+		Code:  enrolmentToken.Code,
+	}, nil
 }
 
-func (server *SecretServer) handleActivate(ctx context.Context, req *secrt.ActivationRequest) (*secrt.ValidationResponse, *secrt.HTTPError) {
+func (server *SecretServer) handleActivate(r *http.Request, req *secrt.ActivationRequest) (*secrt.ActivationResponse, error) {
 	sealedToken, err := base64.URLEncoding.DecodeString(req.Token)
 	if err != nil {
-		return nil, secrt.BadRequestError(err)
+		return nil, jtp.BadRequestError(err)
 	}
 
 	enrolmentToken, err := decrypt[EnrolmentToken](server, sealedToken)
 	if err != nil {
-		return nil, secrt.BadRequestError(err)
+		return nil, jtp.BadRequestError(err)
 	}
 
 	if req.Code != enrolmentToken.Code {
-		return nil, secrt.ForbiddenError(fmt.Errorf("enrolment token code does not match request"))
+		return nil, jtp.ForbiddenError(fmt.Errorf("enrolment token code does not match request"))
 	}
 
-	log.Println("got valid enrolment request for", enrolmentToken.Peer)
+	log.Println("got valid activation request for", enrolmentToken.Peer)
 
-	return &secrt.ValidationResponse{}, nil
+	if err := server.enrolUser(enrolmentToken.Peer, enrolmentToken.PublicKey); err != nil {
+		return nil, err
+	}
+
+	return &secrt.ActivationResponse{
+		Message: "Welcome to secrt!",
+	}, nil
 }

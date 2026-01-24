@@ -9,6 +9,7 @@ import (
 	"time"
 
 	secrt "github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 )
 
 // We use the inbox message and metadata to generate a List entry which is then
@@ -36,7 +37,7 @@ func CmdLs(config *Config, endpoint *Endpoint, args []string) error {
 	}
 
 	var inbox secrt.Inbox
-	if err := Call(endpoint, EMPTY, &inbox, "GET", "inbox"); err != nil {
+	if err := Call(endpoint, jtp.Nil, &inbox, "GET", "inbox"); err != nil {
 		return err
 	}
 

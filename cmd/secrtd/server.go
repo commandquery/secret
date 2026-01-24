@@ -10,9 +10,11 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/nacl/box"
@@ -92,33 +94,33 @@ func (server *SecretServer) GetPeer(alias string) (*Peer, bool) {
 	return &peer, true
 }
 
-func (server *SecretServer) Authenticate(r *http.Request) (*Peer, *secrt.HTTPError) {
+func (server *SecretServer) Authenticate(r *http.Request) (*Peer, *jtp.HTTPError) {
 	sig := r.Header.Get("Signature")
 	if sig == "" {
-		return nil, secrt.UnauthorizedError(fmt.Errorf("missing signature header"))
+		return nil, jtp.UnauthorizedError(fmt.Errorf("missing signature header"))
 	}
 
 	// Signature is base64-encoded JSON
 	js, err := base64.StdEncoding.DecodeString(sig)
 	if err != nil {
-		return nil, secrt.UnauthorizedError(fmt.Errorf("invalid signature encoding: %w", err))
+		return nil, jtp.UnauthorizedError(fmt.Errorf("invalid signature encoding: %w", err))
 	}
 
 	var signature secrt.Signature
 	if err = json.Unmarshal(js, &signature); err != nil {
-		return nil, secrt.UnauthorizedError(fmt.Errorf("invalid signature: %w", err))
+		return nil, jtp.UnauthorizedError(fmt.Errorf("invalid signature: %w", err))
 	}
 
 	ciphertext := signature.Sig
 
 	// Check that the version number works with us.
 	if ciphertext[0] != 0 {
-		return nil, secrt.UnauthorizedError(fmt.Errorf("signature version %d is not supported", ciphertext[0]))
+		return nil, jtp.UnauthorizedError(fmt.Errorf("signature version %d is not supported", ciphertext[0]))
 	}
 
 	peer, ok := server.GetPeer(signature.Peer)
 	if !ok {
-		return nil, secrt.UnauthorizedError(fmt.Errorf("unknown peer %q", signature.Peer))
+		return nil, jtp.UnauthorizedError(fmt.Errorf("unknown peer %q", signature.Peer))
 	}
 
 	var nonce [24]byte
@@ -127,22 +129,40 @@ func (server *SecretServer) Authenticate(r *http.Request) (*Peer, *secrt.HTTPErr
 	var out []byte
 	plaintext, ok := box.Open(out, ciphertext[25:], &nonce, secrt.To32(peer.PublicKey), secrt.To32(server.PrivateBoxKey))
 	if !ok {
-		return nil, secrt.UnauthorizedError(fmt.Errorf("failed authenticate message from %s", peer.Alias))
+		return nil, jtp.UnauthorizedError(fmt.Errorf("failed authenticate message from %s", peer.Alias))
 	}
 
 	timestamp, err := strconv.ParseInt(string(plaintext), 10, 64)
 	if err != nil {
-		return nil, secrt.UnauthorizedError(fmt.Errorf("invalid timestamp: %w", err))
+		return nil, jtp.UnauthorizedError(fmt.Errorf("invalid timestamp: %w", err))
 	}
 
 	// check time window
 	now := time.Now().Unix()
 	diff := now - timestamp
 	if diff > Config.SignatureSkew || diff < -Config.SignatureSkew {
-		return nil, secrt.UnauthorizedError(errors.New("signature expired"))
+		return nil, jtp.UnauthorizedError(errors.New("signature expired"))
 	}
 
 	return peer, nil
+}
+
+// dispatch is a simple wrapper for jtp.Handle that finds the appropriate server and calls the given function on it.
+func dispatch[IN any, OUT any](method func(*SecretServer, *http.Request, *IN) (*OUT, error)) http.HandlerFunc {
+	return jtp.Handle(func(w http.ResponseWriter, r *http.Request, in *IN) (*OUT, error) {
+		host := GetHostname(r)
+		s, err := GetSecretServer(host)
+		if err != nil {
+			return nil, jtp.ErrNotFound
+		}
+
+		return method(s, r, in)
+	})
+}
+
+func GetHostname(r *http.Request) string {
+	host, _, _ := strings.Cut(r.Host, ":")
+	return host
 }
 
 func StartServer() error {

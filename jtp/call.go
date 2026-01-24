@@ -1,4 +1,4 @@
-package main
+package jtp
 
 import (
 	"bytes"
@@ -9,8 +9,6 @@ import (
 	"net"
 	"net/http"
 	"time"
-
-	"github.com/commandquery/secrt"
 )
 
 var client = &http.Client{
@@ -28,46 +26,39 @@ var client = &http.Client{
 	},
 }
 
-var EMPTY = &emptyTag{}
-
-type emptyTag struct{}
-
-type JSONRequest[S any, R any] struct {
-	ctx      context.Context
-	endpoint *Endpoint
-	method   string
-	path     []string
-	headers  http.Header
-	signed   bool
-	send     S
-	recv     *R
+// Request represents a HTTP call to a server, and contains the types being sent and received.
+type Request[S any, R any] struct {
+	Ctx     context.Context
+	Method  string
+	URL     string
+	Headers http.Header
+	Send    *S
+	Recv    *R
 }
 
 // Call sends a JSON object and receives a JSON response. It's a convenience method that
-// creates a JSONRequest and calls it. The intent is that most calls should use
+// creates a Request and calls it. The intent is that most calls should use
 // this method, but some requests are more complex and require additional settings
 // (unsigned requests, headers, etc).
-func Call[S any, R any](endpoint *Endpoint, s S, r *R, method string, path ...string) error {
-	request := JSONRequest[S, R]{
-		ctx:      context.Background(),
-		endpoint: endpoint,
-		method:   method,
-		path:     path,
-		signed:   true,
-		send:     s,
-		recv:     r,
+func Call[S any, R any](method string, uri string, headers http.Header, s *S, r *R) error {
+	request := Request[S, R]{
+		Ctx:     context.Background(),
+		Method:  method,
+		URL:     uri,
+		Headers: headers,
+		Send:    s,
+		Recv:    r,
 	}
 
-	return JSONCall[S, R](&request)
+	return DoRequest[S, R](&request)
 }
 
-func JSONCall[S any, R any](r *JSONRequest[S, R]) error {
+func DoRequest[S any, R any](r *Request[S, R]) error {
 
 	var reader io.Reader = http.NoBody
 
-	// If the request isn't EMPTY, serialise and send it.
-	if _, ok := any(r.send).(*emptyTag); !ok {
-		js, err := json.Marshal(r.send)
+	if r.Send != nil {
+		js, err := json.Marshal(r.Send)
 		if err != nil {
 			return fmt.Errorf("unable to marshal json: %v", err)
 		}
@@ -75,24 +66,19 @@ func JSONCall[S any, R any](r *JSONRequest[S, R]) error {
 		reader = bytes.NewReader(js)
 	}
 
-	req, err := http.NewRequestWithContext(r.ctx, r.method, r.endpoint.Path(r.path...), reader)
+	req, err := http.NewRequestWithContext(r.Ctx, r.Method, r.URL, reader)
 	if err != nil {
 		return err
-	}
-
-	if r.signed {
-		if err = r.endpoint.SetSignature(req); err != nil {
-			return fmt.Errorf("unable to set signature: %w", err)
-		}
 	}
 
 	if reader != http.NoBody {
 		req.Header.Set("Content-Type", "application/json")
 	}
+
 	req.Header.Set("Accept", "application/json")
 
-	if r.headers != nil {
-		for k, v := range r.headers {
+	if r.Headers != nil {
+		for k, v := range r.Headers {
 			for _, val := range v {
 				req.Header.Add(k, val)
 			}
@@ -106,10 +92,10 @@ func JSONCall[S any, R any](r *JSONRequest[S, R]) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return &secrt.HTTPError{StatusCode: resp.StatusCode}
+		return &HTTPError{StatusCode: resp.StatusCode}
 	}
 
-	if _, ok := any(r.recv).(*emptyTag); ok {
+	if r.Recv == nil {
 		return nil
 	}
 
@@ -118,7 +104,7 @@ func JSONCall[S any, R any](r *JSONRequest[S, R]) error {
 		return fmt.Errorf("unable to read response body: %w", err)
 	}
 
-	if err = json.Unmarshal(body, r.recv); err != nil {
+	if err = json.Unmarshal(body, r.Recv); err != nil {
 		return fmt.Errorf("unable to unmarshal response: %w", err)
 	}
 

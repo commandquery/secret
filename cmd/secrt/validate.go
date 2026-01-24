@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/commandquery/secrt"
+	"github.com/commandquery/secrt/jtp"
 )
 
 // Activate an enrolment given a token and code.
@@ -25,5 +26,5 @@ func CmdActivate(config *Config, endpoint *Endpoint, args []string) error {
 		Code:  code,
 	}
 
-	return Call(endpoint, activationRequest, EMPTY, "POST", "activate")
+	return Call(endpoint, activationRequest, jtp.Nil, "POST", "activate")
 }
