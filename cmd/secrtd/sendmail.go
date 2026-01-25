@@ -29,7 +29,7 @@ to activate your account, please copy and paste this whole command into your com
 
 or just click here:
 
-    https://{{.Server.Hostname}}/activate/token={{.Token}}
+    {{.Server.Hostname}}/activate?t={{.Token}}
 
 and enter code {{printf "%06d" .Code}}
 
@@ -73,7 +73,7 @@ func sendmail(msg string, values any) error {
 		log.Fatalf("failed to set TO address: %s", err)
 	}
 
-	message.Subject("welcome to secrt.io!")
+	message.Subject("welcome to secrt.io")
 	message.SetBodyString(mail.TypeTextPlain, mailBody)
 
 	// Deliver the mails via SMTP

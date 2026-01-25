@@ -43,7 +43,7 @@ export SECRT_ENROL_FILE=token.txt
 
 rm -f *.json $SECRT_ENROL_FILE
 
-secrtd add localhost
+secrtd add http://localhost:8080
 
 secrtd &
 SECRTD=$!

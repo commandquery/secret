@@ -19,15 +19,14 @@
 - [ ] upon activation, server should send a secret message to the client.
   - [ ] this means the server needs to be a peer!
   - [ ] client should print activation welcome message defined by server
-- [ ] need server-side message size limits
-- [ ] need to use LogError instead of WriteStatus in http handlers (instead of _ = WriteStatus(...))
+- [ ] need server-side message size limit enforcement
 - [ ] need to automatically purge old messages from SQL
+- [ ] policy support
+  - [ ] daily limits, message size limits, timezone, secret linger time, invites
+  - [ ] invite limits - count goes down if an invited peer joins
 - [ ] need maximum message size limits in dispatchJS (http.MaxBytesReader) and configurable (lower) limits in handlePostMessage 
-- [ ] email enrolment verification (if required and available with server config)
 - [ ] secrt.io website.
 - [ ] deploy as an actual service (kill the version running at emersion)
-- [ ] quota support: daily limits, message size limits, timezone, secret linger time, invites
-- [ ] invite limits - count goes down if an invited peer joins
 - [ ] some kind of usage limits / AUP / rate limiting - a byte limit would satisfy my problem with nasty material
 - [ ] make available in homebrew
 - [ ] web site
@@ -112,3 +111,6 @@
 - [X] reduce the activation token size
     - [X] store activation codes on the server
     - [X] reduces token size and lets us rate limit too
+- [X] need to use LogError instead of WriteStatus in http handlers (instead of _ = WriteStatus(...))
+- [X] email enrolment verification (if required and available with server config)
+- [X] activation URL (ie, target for activation link)

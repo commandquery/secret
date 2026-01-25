@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/commandquery/secrt"
@@ -165,8 +164,13 @@ func dispatch[IN any, OUT any](method func(*SecretServer, *http.Request, *IN) (*
 }
 
 func GetHostname(r *http.Request) string {
-	host, _, _ := strings.Cut(r.Host, ":")
-	return host
+
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+
+	return scheme + "://" + r.Host
 }
 
 func StartServer() error {
@@ -198,8 +202,8 @@ func StartServer() error {
 	mux.HandleFunc("GET "+pathPrefix+"challenge", dispatch((*SecretServer).handleGetChallenge))
 
 	// POST performs the enrolment. GET displays the HTML activation page.
-	//mux.HandleFunc("POST "+pathPrefix+"activate", dispatch((*SecretServer).handleActivate))
-	mux.HandleFunc("POST "+pathPrefix+"activate", dispatch((*SecretServer).handleActivate))
+	mux.HandleFunc("POST "+pathPrefix+"activate", dispatch((*SecretServer).handlePostActivate))
+	mux.HandleFunc("GET "+pathPrefix+"activate", handleGetActivate)
 
 	log.Println("listening on :8080")
 	return http.ListenAndServe(":8080", mux)

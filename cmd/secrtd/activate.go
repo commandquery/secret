@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/base64"
 	"fmt"
 	"net/http"
@@ -9,7 +10,10 @@ import (
 	"github.com/commandquery/secrt/jtp"
 )
 
-func (server *SecretServer) handleActivate(r *http.Request, req *secrt.ActivationRequest) (*secrt.ActivationResponse, error) {
+//go:embed ui/activate.html
+var activatePage string
+
+func (server *SecretServer) handlePostActivate(r *http.Request, req *secrt.ActivationRequest) (*secrt.ActivationResponse, error) {
 	token, err := base64.RawURLEncoding.DecodeString(req.Token)
 	if err != nil {
 		return nil, jtp.BadRequestError(fmt.Errorf("invalid token: %w", err))
@@ -23,4 +27,12 @@ func (server *SecretServer) handleActivate(r *http.Request, req *secrt.Activatio
 	return &secrt.ActivationResponse{
 		Message: "Welcome to secrt!",
 	}, nil
+}
+
+func handleGetActivate(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.Write([]byte(activatePage))
 }

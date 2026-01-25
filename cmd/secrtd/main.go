@@ -4,10 +4,19 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Temporary command to create a server.
 func addServerCmd(hostname string) error {
+
+	if !strings.HasPrefix(hostname, "http") {
+		return fmt.Errorf("hostname must start with http:// or https://")
+	}
+
+	if strings.HasSuffix(hostname, "/") {
+		hostname = hostname[:len(hostname)-1]
+	}
 
 	server := NewSecretServer(hostname)
 
