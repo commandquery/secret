@@ -9,7 +9,7 @@ import (
 // Temporary command to create a server.
 func addServerCmd(hostname string) error {
 
-	server := NewSecretServer()
+	server := NewSecretServer(hostname)
 
 	ctx := context.Background()
 

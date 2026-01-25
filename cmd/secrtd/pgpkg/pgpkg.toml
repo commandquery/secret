@@ -1,8 +1,10 @@
 Package = "github.com/commandquery/secrt"
 Schemas = [ "secrt" ]
+Extensions = [ "pgcrypto" ]
 Migrations = [
     "schema/server.sql",
     "schema/peer.sql",
     "schema/hostname.sql",
-    "schema/message.sql"
+    "schema/message.sql",
+    "schema/activation.sql"
 ]

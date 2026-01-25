@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	EnrolAuto = "auto"
 	EnrolFile = "file"
 	EnrolMail = "mail"
 )
@@ -34,7 +33,7 @@ func initConfig() error {
 		Config.PathPrefix += "/"
 	}
 
-	if !slices.Contains([]string{EnrolAuto, EnrolFile, EnrolMail}, Config.EnrolAction) {
+	if !slices.Contains([]string{EnrolFile, EnrolMail}, Config.EnrolAction) {
 		return fmt.Errorf("invalid enrolment action: %s", Config.EnrolAction)
 	}
 

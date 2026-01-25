@@ -10,11 +10,19 @@ export CGO_ENABLED=0
 export PGDATABASE=st
 export PGSSLMODE=disable
 
-set -ex
+set -e
 
 dropdb $PGDATABASE
 createdb $PGDATABASE
 
+# Enrol a user via the token file mechanism.
+# Server puts the tokens and codes into a file that we use to activate the enrolment.
+# usage: enrol file.json peerid store
+enrol() {
+  secrt -c $1 enrol ${3:+--store=$3} $2 http://localhost:8080/
+  read -r token code < <(tail -1 $SECRT_ENROL_FILE)
+  secrt -c $1 activate "$token" "$code"
+}
 
 cleanup() {
     kill "$SECRTD" 2>/dev/null
@@ -28,25 +36,26 @@ go build -o secrt ../cmd/secrt
 go build -o secrtd ../cmd/secrtd
 go test ..
 
-rm -f *.json
-
 # Use a small challenge size to keep tests snappy.
 export SECRT_CHALLENGE_SIZE=10
-export SECRT_ENROL_ACTION=auto
+export SECRT_ENROL_ACTION=file
+export SECRT_ENROL_FILE=token.txt
+
+rm -f *.json $SECRT_ENROL_FILE
 
 secrtd add localhost
 
 secrtd &
 SECRTD=$!
 
-sleep 2
+for _ in {1..30}; do nc -z localhost 8080 && break || sleep 0.1; done
 
 #
 # Enrol alice and bob
 #
 echo "--- secrt enrol"
-secrt -c alice.json enrol --store=clear alice@example.com http://localhost:8080/
-secrt -c bob.json enrol --store=clear bob@example.com http://localhost:8080/
+enrol alice.json alice@example.com clear
+enrol bob.json bob@example.com clear
 
 #
 # Send a message from alice to bob
@@ -101,7 +110,7 @@ MSGID=$(secrt -c bob.json send ./TEST.md alice@example.com)
 # Enrol Charlie, but disable acceptPeers.
 #
 echo "--- secrt ls (acceptPeers=false)"
-secrt -c charlie.json enrol --store=clear charlie@example.com http://localhost:8080/
+enrol charlie.json charlie@example.com clear
 secrt -c charlie.json set acceptPeers=false
 ALICEMSG=$(echo "hello" | secrt -c alice.json send charlie@example.com)
 secrt -c charlie.json ls
@@ -203,7 +212,7 @@ secrt -c alice.json peer ls
 # Test platform keystore create
 #
 echo "--- enrol with platform keystore"
-secrt -c denise.json enrol --store=platform denise@example.com http://localhost:8080/
+enrol denise.json denise@example.com platform
 
 #
 # Test platform keystore access
@@ -216,7 +225,7 @@ MSG=$(secrt -c alice.json get $MSGID)
 # Test the default keystore type is "platform"
 #
 echo "--- default keystore type"
-secrt -c ernie.json enrol ernie@example.com http://localhost:8080/
+enrol ernie.json ernie@example.com
 if ! jq -e '.endpoints[0].privateKeyStores | map(select(.type == "platform")) | length == 1' ernie.json > /dev/null; then
   echo "unexpected keystore type in ernie.json, expected default to be 'platform'"
   exit 1
@@ -247,7 +256,7 @@ secrt -c alice.json invite fred@example.com
 # Attempt to double enrol without --force
 #
 echo "--- secrt double enrol fail test"
-secrt -c guy.json enrol guy@example.com http://localhost:8080/
+enrol guy.json guy@example.com clear
 if secrt -c guy.json enrol guy@example.com http://localhost:8080/ 2> /dev/null; then
   echo "secrt enrol should have failed!" 2>&1
   exit 1
@@ -257,7 +266,7 @@ fi
 # Attempt to enrol on same SECRTD with different peer ID
 #
 echo "--- secrt same SECRTD different peer"
-secrt -c guy.json enrol harry@example.com http://localhost:8080/
+enrol guy.json harry@example.com clear
 
 #
 # Test that the default endpoint changes
@@ -265,32 +274,6 @@ secrt -c guy.json enrol harry@example.com http://localhost:8080/
 echo "--- use different enrolment"
 echo "hello" | secrt -c guy.json send alice@example.com
 secrt -c alice.json ls
-
-#
-# Test non-automatic-enrolment
-#
-kill $SECRTD
-export SECRT_ENROL_ACTION=file
-export SECRT_ENROL_FILE=token.txt
-secrtd &
-SECRTD=$!
-sleep 2
-
-secrt -c iris.json enrol iris@example.com http://localhost:8080/
-read -r token code < <(tail -1 token.txt)
-secrt -c iris.json activate "$token" "$code"
-
-#
-# make sure the enrolment worked
-#
-MSGID=$(echo "iris" | secrt -c iris.json send alice@example.com)
-MSG=$(secrt -c alice.json get $MSGID)
-if [ "$MSG" != "iris" ]; then
-  echo "expected iris" 1>&2
-  exit 1
-fi
-
-
 
 #
 # Attempt to double enrol with --force

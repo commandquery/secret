@@ -20,13 +20,20 @@ var ActivateMailChannel = make(chan *ActivationToken, 16)
 const activationEmail = `
 hi! thanks for trying secrt.
 
+secrt is a command line tool for sending secrets to coworkers, friends,
+and people who need to know.
+
 to activate your account, please copy and paste this whole command into your command line:
 
-	secrt activate {{.Token}} {{.Code}}
+	secrt activate "{{.Token}}" {{.Code}}
 
-secrt is a command line tool for sending secrets to coworkers, friends,
-and people who need to know. you can find out more about secrt by visiting
-our web site: https://secrt.io/
+or just click here:
+
+    https://{{.Server.Hostname}}/activate/token={{.Token}}
+
+and enter code {{printf "%06d" .Code}}
+
+you can find out more about secrt by visiting our web site: https://secrt.io/
 `
 
 func startMailPoller(replicas int) {

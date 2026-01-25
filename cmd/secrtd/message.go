@@ -119,6 +119,7 @@ func (server *SecretServer) handleDeleteMessage(r *http.Request, _ *jtp.None) (*
 		if errors.Is(err, ErrAmbiguousMessageID) {
 			return nil, jtp.BadRequestError(err)
 		}
+		return nil, err
 	}
 
 	if err = msg.Delete(); err != nil {

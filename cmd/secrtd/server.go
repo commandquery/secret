@@ -27,6 +27,7 @@ var ErrUnknownMessageID error = errors.New("unknown message ID")
 
 type SecretServer struct {
 	Server         uuid.UUID
+	Hostname       string
 	SecretBoxKey   []byte
 	PrivateBoxKey  []byte
 	PublicBoxKey   []byte
@@ -35,7 +36,7 @@ type SecretServer struct {
 }
 
 // NewSecretServer returns a new SecretServer with a unique private and public key.
-func NewSecretServer() *SecretServer {
+func NewSecretServer(hostname string) *SecretServer {
 	publicBoxKey, privateBoxKey, err := box.GenerateKey(rand.Reader)
 	if err != nil {
 		panic(err)
@@ -49,6 +50,7 @@ func NewSecretServer() *SecretServer {
 
 	server := &SecretServer{
 		Server:         uuid.New(),
+		Hostname:       hostname,
 		SecretBoxKey:   secretBoxKey[:],
 		PrivateBoxKey:  privateBoxKey[:],
 		PublicBoxKey:   publicBoxKey[:],
@@ -64,7 +66,9 @@ func GetSecretServer(hostname string) (*SecretServer, error) {
 	ctx := context.Background()
 	row := PGXPool.QueryRow(ctx, "select server, secret_box_key, private_box_key, public_box_key, private_sign_key, public_sign_key from secrt.hostname join secrt.server using (server) where hostname=$1", hostname)
 
-	server := SecretServer{}
+	server := SecretServer{
+		Hostname: hostname,
+	}
 	err := row.Scan(&server.Server, &server.SecretBoxKey, &server.PrivateBoxKey, &server.PublicBoxKey, &server.PrivateSignKey, &server.PublicSignKey)
 	if err != nil {
 		return nil, fmt.Errorf("unable to find server %s: %w", hostname, err)
@@ -153,7 +157,7 @@ func dispatch[IN any, OUT any](method func(*SecretServer, *http.Request, *IN) (*
 		host := GetHostname(r)
 		s, err := GetSecretServer(host)
 		if err != nil {
-			return nil, jtp.ErrNotFound
+			return nil, jtp.NotFoundError(fmt.Errorf("unable to find secret server %s: %w", host, err))
 		}
 
 		return method(s, r, in)

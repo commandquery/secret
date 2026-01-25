@@ -85,6 +85,7 @@ const (
 type EnrolmentResponse struct {
 	ServerKey []byte `json:"serverKey"`
 	Activated bool   `json:"activated"`
+	Message   string `json:"message"`
 }
 
 type ActivationRequest struct {

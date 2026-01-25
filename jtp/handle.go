@@ -3,7 +3,6 @@ package jtp
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"net/http"
 )
@@ -42,7 +41,6 @@ func Handle[IN any, OUT any](handler JSFunc[IN, OUT]) http.HandlerFunc {
 		out, err := handler(w, r, &in)
 
 		if err != nil {
-			err = &HTTPError{400, fmt.Errorf("oh noes!")}
 			var httpErr *HTTPError
 			ok := errors.As(err, &httpErr)
 			if ok {

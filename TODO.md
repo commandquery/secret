@@ -3,18 +3,8 @@
 
 ## Client
 
-- [ ] consider hashcash for all calls
-- [ ] defer "adding new peer" messages to client exit
-- [ ] enrolment workflow 
-  - [ ] enrolment messages (to the CLI) should come from the server!
-    - allows custom welcome messages for server owners
-  - [ ] send email during enrolment.
-    - move the smtp config into server config
-    - send a proper email with an enrolment link
-    - need a server page to accept the enrolment link.
-  - [X] client should JSON to server with public key instead of binary (allows extension later)
-  - [X] handleEnrol should return server public key as JSON instead of binary (allows extension later)
-  - [ ] clicking on email agrees to T&Cs -OR- does the download/license cover it?
+- [ ] defer "adding new peer" messages ("warning: added new peer") until client exits
+- [ ] endpoints might have multiple primary keys (senders) but shouldn't they share the peers list?
 - [ ] how to deal with public key changes
 - [ ] how to prevent unwanted messages / spam? block user until authorised? block/report address?
   - [ ] require invite
@@ -26,9 +16,9 @@
 
 ## Server
 
-- [ ] finish account activation -> actual enrolment via email
-- [ ] upon activation, server should send a secret to the client.
+- [ ] upon activation, server should send a secret message to the client.
   - [ ] this means the server needs to be a peer!
+  - [ ] client should print activation welcome message defined by server
 - [ ] need server-side message size limits
 - [ ] need to use LogError instead of WriteStatus in http handlers (instead of _ = WriteStatus(...))
 - [ ] need to automatically purge old messages from SQL
@@ -113,3 +103,12 @@
 - [X] some nice JSON wrappers for sending and receiving JSON
 - [X] client should use a http.Client (not http.DefaultClient) that has reasonable timeouts
 - [X] client should always print the full UUID. you can optionally just use the prefix.
+- [X] finish account activation -> actual enrolment via email - REVIEW
+- [X] enrolment workflow - REVIEW
+    - [X] enrolment messages (to the CLI) should come from the server!
+    - [X] send email during enrolment.
+    - [X] client should JSON to server with public key instead of binary (allows extension later)
+    - [X] handleEnrol should return server public key as JSON instead of binary (allows extension later)
+- [X] reduce the activation token size
+    - [X] store activation codes on the server
+    - [X] reduces token size and lets us rate limit too
