@@ -3,7 +3,12 @@
 
 ## Client
 
-- [ ] defer "adding new peer" messages ("warning: added new peer") until client exits
+- [ ] strengthen GetSignature() / authentication:
+  - [ ] enrolment/auth should respond with a server-secret token containing the peer details, + public key
+  - [ ] that's what we save on the client
+  - [ ] we should just use the server-secret token in the signature.
+- [ ] make sure the client config field names match the server-side names
+  - eg server.publicKey should probably be publicBoxKey? publicSignKey?
 - [ ] endpoints might have multiple primary keys (senders) but shouldn't they share the peers list?
 - [ ] how to deal with public key changes
 - [ ] how to prevent unwanted messages / spam? block user until authorised? block/report address?
@@ -16,7 +21,13 @@
 
 ## Server
 
-- [ ] upon activation, server should send a secret message to the client.
+- [ ] don't store email addresses
+  - [ ] use hashing to map email addresses to peer ids on the server
+  - [ ] client adds their alias (email address) in encrypted metadata
+  - [ ] server adds sealed sender UUID, and stores it as server metadata for the message
+  - [ ] client verifies the UUID from the server, hashes the payload alias, and compares them
+- [ ] carefully review the API, it will be a pain to change later.
+- [ ] upon activation, server should send a secret welcome message to the client.
   - [ ] this means the server needs to be a peer!
   - [ ] client should print activation welcome message defined by server
 - [ ] need server-side message size limit enforcement
@@ -114,3 +125,13 @@
 - [X] need to use LogError instead of WriteStatus in http handlers (instead of _ = WriteStatus(...))
 - [X] email enrolment verification (if required and available with server config)
 - [X] activation URL (ie, target for activation link)
+- [X] defer "adding new peer" messages ("warning: added new peer") until client exits
+- [X] public key lookup changes:
+    - [X] sender's public key is now in the message claims
+    - [X] client needs to compare with existing key, add it if not found and auto-enabled
+- [X] BUG: secret ls can't get peers because it expects a sender. add peer from claims instead
+    - [X] enrolment handshake needs to return server's public box key
+- [X] need to validate that the claim metadata and payload hashes match the actual payload and metadata
+- [X] add server-sealed claims to messages
+- [X] use claim data in ls and get
+- [X] remove sender from message table
