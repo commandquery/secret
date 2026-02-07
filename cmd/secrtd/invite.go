@@ -13,7 +13,7 @@ func (server *SecretServer) handleInvite(r *http.Request, _ *jtp.None) (*jtp.Non
 		return nil, aerr
 	}
 
-	peerID := r.PathValue("peer")
-	log.Println("received invite request for user:", peerID)
+	alias := r.PathValue("alias")
+	log.Println("received invite request for user:", alias)
 	return nil, nil
 }

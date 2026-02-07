@@ -46,7 +46,7 @@ func (endpoint *Endpoint) enrol() error {
 	request := jtp.Request[*secrt.EnrolmentRequest, secrt.EnrolmentResponse]{
 		Ctx:     context.Background(),
 		Method:  http.MethodPost,
-		URL:     endpoint.Path("enrol", endpoint.PeerID),
+		URL:     endpoint.Path("enrol", endpoint.Alias),
 		Send:    &enrolmentRequest,
 		Recv:    &enrolmentResponse,
 		Headers: header,

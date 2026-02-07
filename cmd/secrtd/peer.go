@@ -36,18 +36,18 @@ func (server *SecretServer) handleGetPeer(r *http.Request, _ *jtp.None) (*secrt.
 		return nil, err
 	}
 
-	peerID := r.PathValue("peer")
-	if peerID == "" {
+	alias := r.PathValue("alias")
+	if alias == "" {
 		return nil, jtp.BadRequestError(fmt.Errorf("missing peer parameter"))
 	}
 
-	peer, ok := server.GetPeer(peerID)
+	peer, ok := server.GetPeer(alias)
 	if !ok {
 		return nil, jtp.NotFoundError(fmt.Errorf("peer not found"))
 	}
 
 	return &secrt.Peer{
-		Peer:      peerID,
+		Peer:      alias,
 		PublicKey: peer.PublicKey,
 	}, nil
 }

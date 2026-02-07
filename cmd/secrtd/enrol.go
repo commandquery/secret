@@ -84,14 +84,14 @@ func (server *SecretServer) handleEnrol(r *http.Request, req *secrt.EnrolmentReq
 		return nil, jtp.ForbiddenError(err)
 	}
 
-	peerID := r.PathValue("peer")
-	log.Printf("challenge response accepted for enrolment request from peer %s", peerID)
+	alias := r.PathValue("alias")
+	log.Printf("challenge response accepted for enrolment request from peer %s", alias)
 
 	var token []byte
 	var code int
 
 	// Generate a token.
-	row := PGXPool.QueryRow(r.Context(), "select _token, _code from secrt.enrol($1, $2, $3)", server.Server, peerID, req.PublicKey)
+	row := PGXPool.QueryRow(r.Context(), "select _token, _code from secrt.enrol($1, $2, $3)", server.Server, alias, req.PublicKey)
 	if err := row.Scan(&token, &code); err != nil {
 		return nil, fmt.Errorf("unable to create token: %w", err)
 	}
@@ -99,7 +99,7 @@ func (server *SecretServer) handleEnrol(r *http.Request, req *secrt.EnrolmentReq
 	// Send the token to the user via some channel
 	activationToken := &ActivationToken{
 		Server: server,
-		Peer:   peerID,
+		Peer:   alias,
 		Token:  base64.RawURLEncoding.EncodeToString(token),
 		Code:   code,
 	}

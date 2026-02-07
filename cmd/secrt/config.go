@@ -30,7 +30,7 @@ const (
 
 // Peer contains information about other users.
 type Peer struct {
-	PeerID    string `json:"peerID"`
+	Alias     string `json:"alias"`
 	PublicKey []byte `json:"publicKey"`
 }
 
@@ -74,11 +74,14 @@ type PrivateKeyStore interface {
 // Most of the configuration is specific to the selected server.
 type Endpoint struct {
 	URL              string                `json:"url"`              // Endpoint URL
-	PeerID           string                `json:"peerID"`           // Actual PeerID for this user
+	Alias            string                `json:"alias"`            // Alias for this user
 	ServerKey        []byte                `json:"serverKey"`        // Public key of this server
 	PrivateKeyStores []*PrivateKeyEnvelope `json:"privateKeyStores"` // Set of private keys, in order of user preference.
 	PublicKey        []byte                `json:"publicKey"`        // Public key for the private key
 	Peers            map[string]*Peer      `json:"peers"`            // Contains info about other users
+
+	// Any newly-added peers are added to this list so we can display them on exit.
+	newPeers []*Peer
 }
 
 // LoadClientConfig loads the secret configuration, if there is one.
@@ -212,10 +215,10 @@ func NewKeyStore(endpoint *Endpoint, storeType KeyStoreType, privateKey []byte) 
 	}
 }
 
-// GetEndpoint returns any existing endpoint for the given (peerID, serverURL) pair.
-func (config *Config) GetEndpoint(peerID, serverURL string) *Endpoint {
+// GetEndpoint returns any existing endpoint for the given (alias, serverURL) pair.
+func (config *Config) GetEndpoint(alias, serverURL string) *Endpoint {
 	for _, endpoint := range config.Endpoints {
-		if endpoint.URL == serverURL && endpoint.PeerID == peerID {
+		if endpoint.URL == serverURL && endpoint.Alias == alias {
 			return endpoint
 		}
 	}
@@ -223,26 +226,26 @@ func (config *Config) GetEndpoint(peerID, serverURL string) *Endpoint {
 	return nil
 }
 
-// DeleteEndpoint deletes any existing endpoint for the given (peerID, serverURL) pair.
-func (config *Config) DeleteEndpoint(peerID, endpointURL string) {
+// DeleteEndpoint deletes any existing endpoint for the given (alias, serverURL) pair.
+func (config *Config) DeleteEndpoint(alias, endpointURL string) {
 	config.Endpoints = slices.DeleteFunc(config.Endpoints, func(e *Endpoint) bool {
-		return e.URL == endpointURL && e.PeerID == peerID
+		return e.URL == endpointURL && e.Alias == alias
 	})
 	config.modified = true
 }
 
 // AddEndpoint adds a new server to the config, and generates a new, cleartext keypair for that server.
-// This function will only replace an existing endpoint for the given (peerID, endpointURL) if force is true.
-func (config *Config) AddEndpoint(peerID, endpointURL string, storeType KeyStoreType, force bool) error {
+// This function will only replace an existing endpoint for the given (alias, endpointURL) if force is true.
+func (config *Config) AddEndpoint(alias, endpointURL string, storeType KeyStoreType, force bool) error {
 
 	// Check if there's an existing enrolment; abort if force isn't set.
-	existingEndpoint := config.GetEndpoint(peerID, endpointURL)
+	existingEndpoint := config.GetEndpoint(alias, endpointURL)
 	if existingEndpoint != nil {
 		if !force {
 			return ErrExistingEnrolment
 		}
 
-		config.DeleteEndpoint(peerID, endpointURL)
+		config.DeleteEndpoint(alias, endpointURL)
 	}
 
 	public, private, err := box.GenerateKey(rand.Reader)
@@ -256,7 +259,7 @@ func (config *Config) AddEndpoint(peerID, endpointURL string, storeType KeyStore
 
 	newEndpoint := &Endpoint{
 		URL:       endpointURL,
-		PeerID:    peerID,
+		Alias:     alias,
 		PublicKey: public[:],
 		Peers:     make(map[string]*Peer),
 	}

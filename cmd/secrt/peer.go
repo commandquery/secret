@@ -24,11 +24,11 @@ func CmdPeer(config *Config, endpoint *Endpoint, args []string) error {
 
 func CmdPeerAdd(config *Config, endpoint *Endpoint, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("usage: secrt peer rm {peerId}")
+		return fmt.Errorf("usage: secrt peer add {alias}")
 	}
 
-	peerId := args[0]
-	_, err := endpoint.AddPeer(peerId)
+	alias := args[0]
+	_, err := endpoint.AddPeer(alias)
 	if err != nil {
 		return err
 	}
@@ -42,13 +42,13 @@ func CmdPeerRm(config *Config, endpoint *Endpoint, args []string) error {
 		return fmt.Errorf("usage: secrt peer rm {peerId}")
 	}
 
-	peerId := args[0]
+	alias := args[0]
 
-	if _, ok := endpoint.Peers[peerId]; !ok {
-		return fmt.Errorf("peer %s not found", peerId)
+	if _, ok := endpoint.Peers[alias]; !ok {
+		return fmt.Errorf("peer %s not found", alias)
 	}
 
-	delete(endpoint.Peers, peerId)
+	delete(endpoint.Peers, alias)
 	config.modified = true
 	return nil
 }

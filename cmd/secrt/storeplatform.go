@@ -20,7 +20,7 @@ func NewPlatformKeyStore(endpoint *Endpoint, privateKey []byte) (*PlatformKeySto
 
 	keystore := &PlatformKeyStore{
 		Service:    "secrt.io",
-		User:       endpoint.PeerID + ":" + endpoint.URL,
+		User:       endpoint.Alias + ":" + endpoint.URL,
 		privateKey: privateKey,
 	}
 

@@ -192,13 +192,13 @@ func StartServer() error {
 	// This makes things really easy to code and eliminates a number of gotchas in the standard
 	// library, but it takes a little getting used to.
 
-	mux.HandleFunc("POST "+pathPrefix+"enrol/{peer}", dispatch((*SecretServer).handleEnrol))
+	mux.HandleFunc("POST "+pathPrefix+"enrol/{alias}", dispatch((*SecretServer).handleEnrol))
 	mux.HandleFunc("GET "+pathPrefix+"inbox", dispatch((*SecretServer).handleGetInbox))
 	mux.HandleFunc("POST "+pathPrefix+"message/{recipient}", dispatch((*SecretServer).handlePostMessage))
 	mux.HandleFunc("GET "+pathPrefix+"message/{id}", dispatch((*SecretServer).handleGetMessage))
 	mux.HandleFunc("DELETE "+pathPrefix+"message/{id}", dispatch((*SecretServer).handleDeleteMessage))
-	mux.HandleFunc("GET "+pathPrefix+"peer/{peer}", dispatch((*SecretServer).handleGetPeer))
-	mux.HandleFunc("POST "+pathPrefix+"invite/{peer}", dispatch((*SecretServer).handleInvite))
+	mux.HandleFunc("GET "+pathPrefix+"peer/{alias}", dispatch((*SecretServer).handleGetPeer))
+	mux.HandleFunc("POST "+pathPrefix+"invite/{alias}", dispatch((*SecretServer).handleInvite))
 	mux.HandleFunc("GET "+pathPrefix+"challenge", dispatch((*SecretServer).handleGetChallenge))
 
 	// POST performs the enrolment. GET displays the HTML activation page.

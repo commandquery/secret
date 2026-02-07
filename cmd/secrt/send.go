@@ -22,13 +22,13 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 		return err
 	}
 
-	var peerList []string
+	var aliases []string
 	var selectedFile string
 
 	// Extract all the peer IDs from the arguments.
 	for _, arg := range flags.Args() {
 		if peerRegexp.MatchString(arg) {
-			peerList = append(peerList, arg)
+			aliases = append(aliases, arg)
 		} else {
 			if selectedFile != "" {
 				return fmt.Errorf("at most one file can be specified")
@@ -37,7 +37,7 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 		}
 	}
 
-	if len(peerList) == 0 {
+	if len(aliases) == 0 {
 		return fmt.Errorf("no peers specified")
 	}
 
@@ -50,8 +50,8 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 
 	// Do a pass to ensure that all peers are known. This lets us fail early if we don't
 	// accept new peers, or if there's a typo.
-	for _, peerID := range peerList {
-		_, err = endpoint.GetPeer(config, peerID)
+	for _, alias := range aliases {
+		_, err = endpoint.GetPeer(config, alias)
 		if err != nil {
 			return fmt.Errorf("unable to get peer: %w", err)
 		}
@@ -67,8 +67,8 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 	var sendErrors []error
 	var sendRequests []secrt.SendRequest
 
-	for _, peerID := range peerList {
-		peer, err := endpoint.GetPeer(config, peerID)
+	for _, alias := range aliases {
+		peer, err := endpoint.GetPeer(config, alias)
 		if err != nil {
 			return fmt.Errorf("unable to get peer: %w", err)
 		}
@@ -91,7 +91,7 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 	for i, request := range sendRequests {
 		var sendResponse secrt.SendResponse
 
-		err = Call(endpoint, &request, &sendResponse, "POST", "message", peerList[i])
+		err = Call(endpoint, &request, &sendResponse, "POST", "message", aliases[i])
 		if err != nil {
 			sendErrors = append(sendErrors, err)
 		} else {
