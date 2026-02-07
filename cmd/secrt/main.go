@@ -37,7 +37,7 @@ func main() {
 	}
 
 	var endpoint *Endpoint
-	if len(config.Endpoints) > 0 {
+	if len(config.Endpoints) > config.Properties.DefaultEndpoint {
 		endpoint = config.Endpoints[config.Properties.DefaultEndpoint]
 	}
 
@@ -135,6 +135,8 @@ func main() {
 	default:
 		secrt.Usage()
 	}
+
+	endpoint.PrintNewPeers()
 
 	if err == nil {
 		os.Exit(0)

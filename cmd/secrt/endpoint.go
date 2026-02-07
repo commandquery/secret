@@ -53,19 +53,19 @@ func (endpoint *Endpoint) Path(path ...string) string {
 }
 
 // GetPeer returns the public key for a given peer (if known).
-func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) {
+func (endpoint *Endpoint) GetPeer(config *Config, alias string) (*Peer, error) {
 	if endpoint.Peers != nil {
-		entry, ok := endpoint.Peers[peerId]
+		entry, ok := endpoint.Peers[alias]
 		if ok {
 			return entry, nil
 		}
 	}
 
 	if !config.Properties.AcceptPeers {
-		return nil, fmt.Errorf("%w: %s", ErrUnknownPeer, peerId)
+		return nil, fmt.Errorf("%w: %s", ErrUnknownPeer, alias)
 	}
 
-	newPeer, err := endpoint.AddPeer(peerId)
+	newPeer, err := endpoint.AddPeer(alias)
 	if err != nil {
 		return nil, fmt.Errorf("unable to add peer: %w", err)
 	}
@@ -74,30 +74,49 @@ func (endpoint *Endpoint) GetPeer(config *Config, peerId string) (*Peer, error) 
 	return newPeer, nil
 }
 
-func (endpoint *Endpoint) AddPeer(peerId string) (*Peer, error) {
+func (endpoint *Endpoint) AddPeer(alias string) (*Peer, error) {
 
 	var peerResp secrt.Peer
-	if err := Call(endpoint, jtp.Nil, &peerResp, "GET", "peer", peerId); err != nil {
-		return nil, fmt.Errorf("unable to get peer %s: %w", peerId, err)
+	if err := Call(endpoint, jtp.Nil, &peerResp, "GET", "peer", alias); err != nil {
+		return nil, fmt.Errorf("unable to get peer %s: %w", alias, err)
 	}
 
 	if len(peerResp.PublicKey) != 32 {
 		return nil, fmt.Errorf("invalid public key length: %d", len(peerResp.PublicKey))
 	}
 
-	if peerResp.Peer != peerId {
-		return nil, fmt.Errorf("received wrong peer id: %s (expected %s)", peerResp.Peer, peerId)
+	if peerResp.Peer != alias {
+		return nil, fmt.Errorf("received wrong peer id: %s (expected %s)", peerResp.Peer, alias)
 	}
 
-	// Write this to stderr so stdout isn't affected.
-	_, _ = fmt.Fprintln(os.Stderr, "Adding new peer", peerId)
 	peer := &Peer{
-		PeerID:    peerId,
+		Alias:     alias,
 		PublicKey: peerResp.PublicKey,
 	}
 
-	endpoint.Peers[peerId] = peer
+	endpoint.Peers[alias] = peer
+	endpoint.newPeers = append(endpoint.newPeers, peer)
 	return peer, nil
+}
+
+func (endpoint *Endpoint) PrintNewPeers() {
+	if endpoint.newPeers == nil {
+		return
+	}
+
+	fmt.Fprintln(os.Stderr)
+
+	for _, peer := range endpoint.newPeers {
+		fmt.Fprintf(os.Stderr, "added new peer: %s\n", peer.Alias)
+	}
+
+	fmt.Fprintln(os.Stderr)
+
+	if len(endpoint.newPeers) > 1 {
+		fmt.Fprintln(os.Stderr, "* If you didn't expect messages from these new peers, don't trust them.")
+	} else {
+		fmt.Fprintf(os.Stderr, "* If you didn't expect a message from %s, don't trust it.\n", endpoint.newPeers[0].Alias)
+	}
 }
 
 // GetSignature returns a Signature header, which is just the peer ID
@@ -117,7 +136,7 @@ func (endpoint *Endpoint) GetSignature() (http.Header, error) {
 
 	// entire signature is json encoded to avoid issues with little bobby table's peer ID.
 	signature := &secrt.Signature{
-		Peer: endpoint.PeerID,
+		Peer: endpoint.Alias,
 		Sig:  ciphertext,
 	}
 
@@ -194,7 +213,7 @@ func (endpoint *Endpoint) Encrypt(plaintext []byte, peerKey []byte) ([]byte, err
 	// same key. Since the nonce here is 192 bits long, a random value
 	// provides a sufficiently small probability of collisions.
 	var nonce [24]byte
-	if _, err := io.ReadFull(rand.Reader, nonce[:]); err != nil {
+	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("unable to generate nonce: %w", err)
 	}
 
@@ -214,15 +233,24 @@ func (endpoint *Endpoint) Encrypt(plaintext []byte, peerKey []byte) ([]byte, err
 	return box.Seal(ciphertext, plaintext, &nonce, secrt.To32(peerKey), secrt.To32(privateKey)), nil
 }
 
-func (endpoint *Endpoint) Decrypt(config *Config, peerID string, ciphertext []byte) ([]byte, error) {
+func (endpoint *Endpoint) DecryptPeer(config *Config, alias string, ciphertext []byte) ([]byte, error) {
+	peer, err := endpoint.GetPeer(config, alias)
+	if err != nil {
+		return nil, fmt.Errorf("unable to find peer %s: %w", alias, err)
+	}
+
+	msg, err := endpoint.Decrypt(config, peer.PublicKey, ciphertext[:])
+	if err != nil {
+		return nil, fmt.Errorf("unable to decrypt message from %s: %w", alias, err)
+	}
+
+	return msg, nil
+}
+
+func (endpoint *Endpoint) Decrypt(config *Config, peerKey []byte, ciphertext []byte) ([]byte, error) {
 	// Check that the version number works with us.
 	if ciphertext[0] != 0 {
 		return nil, fmt.Errorf("ciphertext version (%d) is not supported. Try upgrading `secret`", ciphertext[0])
-	}
-
-	peer, err := endpoint.GetPeer(config, peerID)
-	if err != nil {
-		return nil, err
 	}
 
 	var nonce [24]byte
@@ -234,10 +262,10 @@ func (endpoint *Endpoint) Decrypt(config *Config, peerID string, ciphertext []by
 	}
 
 	var out []byte
-	out, ok := box.Open(out, ciphertext[25:], &nonce, secrt.To32(peer.PublicKey), secrt.To32(privateKey))
+	out, ok := box.Open(out, ciphertext[25:], &nonce, secrt.To32(peerKey), secrt.To32(privateKey))
 
 	if !ok {
-		return nil, fmt.Errorf("unable to authenticate message from %s", peerID)
+		return nil, fmt.Errorf("unable to authenticate message")
 	}
 
 	return out, nil
@@ -266,4 +294,20 @@ func (endpoint *Endpoint) GetChallenge() (*secrt.ChallengeRequest, error) {
 	}
 
 	return challenge, nil
+}
+
+// GetClaims decrypts the claims object of a message. Claims are encrypted by the server,
+// using the server's key, which is associated with this endpoint.
+func (endpoint *Endpoint) GetClaims(config *Config, cryptclaims []byte) (*secrt.Claims, error) {
+	claimbytes, err := endpoint.Decrypt(config, endpoint.ServerKey, cryptclaims)
+	if err != nil {
+		return nil, fmt.Errorf("unable to decrypt message claims: %w", err)
+	}
+
+	var claims secrt.Claims
+	if err := json.Unmarshal(claimbytes, &claims); err != nil {
+		return nil, fmt.Errorf("unable to unmarshal claims: %w", err)
+	}
+
+	return &claims, nil
 }
