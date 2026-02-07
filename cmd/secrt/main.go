@@ -125,6 +125,9 @@ func main() {
 
 	case "activate":
 		err = CmdActivate(config, endpoint, args)
+		if err == nil {
+			err = config.Save()
+		}
 
 	case "genkey":
 		CmdGenKey()

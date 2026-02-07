@@ -57,7 +57,7 @@ func CmdSend(config *Config, endpoint *Endpoint, args []string) error {
 		}
 	}
 
-	// Now we have the plaintext message and metadata; we need to encrypt them both into an PrivateKeyEnvelope.
+	// Now we have the plaintext message and metadata; we need to encrypt them both into an StorageEnvelope.
 	clearmeta, err := json.Marshal(metadata)
 	if err != nil {
 		return fmt.Errorf("unable to marshal metadata: %w", err)

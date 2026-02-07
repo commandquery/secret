@@ -1,11 +1,11 @@
 --
 -- the activate function finds the given activation key and deletes it.
 -- it also deletes any expired keys. It then creates a new peer for the given
--- alias.
+-- alias. Returns the peer ID and associated alias.
 --
 create or replace
-    function secrt.activate(_token bytea, _code int)
-      returns secrt.activation language 'plpgsql' as $$
+    function secrt.activate(_token bytea, _code int, out _peer uuid, out _alias text)
+       language 'plpgsql' as $$
     declare
         _activation secrt.activation;
     begin
@@ -16,17 +16,17 @@ create or replace
             raise exception 'activation token not found';
         end if;
 
-        perform 1 from secrt.peer where server=_activation.server and alias=_activation.alias;
+        perform 1 from secrt.peer where server=_activation.server and peer.alias=_activation.alias;
         if found then
             raise exception 'peer is already activated';
         end if;
 
         insert into secrt.peer (server, peer, alias, public_box_key)
-            values (_activation.server, DEFAULT, _activation.alias, _activation.public_box_key);
+            values (_activation.server, DEFAULT, _activation.alias, _activation.public_box_key)
+            returning peer into _peer;
 
+        _alias = _activation.alias;
         raise notice 'successfully activated alias %', _activation.alias;
-
-        return _activation;
     end;
 $$;
 

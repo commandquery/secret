@@ -209,25 +209,25 @@ secrt -c alice.json peer add charlie@example.com
 secrt -c alice.json peer ls
 
 #
-# Test platform keystore create
+# Test platform vault create
 #
-echo "--- enrol with platform keystore"
+echo "--- enrol with platform vault"
 enrol denise.json denise@example.com platform
 
 #
-# Test platform keystore access
+# Test platform vault access
 #
-echo "--- send with platform keystore"
-MSGID=$(echo "platform keystore" | secrt -c denise.json send alice@example.com)
+echo "--- send with platform vault"
+MSGID=$(echo "platform vault" | secrt -c denise.json send alice@example.com)
 MSG=$(secrt -c alice.json get $MSGID)
 
 #
-# Test the default keystore type is "platform"
+# Test the default vault type is "platform"
 #
-echo "--- default keystore type"
+echo "--- default vault type"
 enrol ernie.json ernie@example.com
-if ! jq -e '.endpoints[0].privateKeyStores | map(select(.type == "platform")) | length == 1' ernie.json > /dev/null; then
-  echo "unexpected keystore type in ernie.json, expected default to be 'platform'"
+if ! jq -e '.endpoints[0].vaults | map(select(.vaultType == "platform")) | length == 1' ernie.json > /dev/null; then
+  echo "unexpected vault type in ernie.json, expected default to be 'platform'"
   exit 1
 fi
 

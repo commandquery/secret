@@ -79,7 +79,7 @@ func CmdEnrol(config *Config, args []string) error {
 		secrt.Usage("secret enrol [--force] user@domain https://server/")
 	}
 
-	if err := config.AddEndpoint(args[0], args[1], KeyStoreType(*storeType), *force); err != nil {
+	if err := config.AddEndpoint(args[0], args[1], VaultType(*storeType), *force); err != nil {
 		if errors.Is(err, ErrExistingEnrolment) {
 			secrt.Exit(1, fmt.Errorf("unable to enrol user: %w; use --force to override", err))
 		} else {

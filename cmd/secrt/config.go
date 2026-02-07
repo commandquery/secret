@@ -20,12 +20,12 @@ import (
 	"golang.org/x/crypto/nacl/box"
 )
 
-type KeyStoreType string
+type VaultType string
 
 const (
-	KeyStoreClear    KeyStoreType = "clear"
-	KeyStorePassword KeyStoreType = "password"
-	KeyStorePlatform KeyStoreType = "platform" // Platform keystore. Uses zalando/go-keyring.
+	VaultClear    VaultType = "clear"
+	VaultPassword VaultType = "password"
+	VaultPlatform VaultType = "platform" // Platform vaule. Uses zalando/go-keyring.
 )
 
 // Peer contains information about other users.
@@ -47,38 +47,40 @@ type Config struct {
 	modified bool   // indicates that the config changed.
 }
 
-// PrivateKeyEnvelope is a concrete envelope around an abstract PrivateKeyStore interface.
-type PrivateKeyEnvelope struct {
-	Type       KeyStoreType    `json:"type"`       // The dynamic KeyStore type, used for marshal/unmarshal
-	Properties json.RawMessage `json:"properties"` // The KeyStore is marshalled into this field.
-	keyStore   PrivateKeyStore // The KeyStore is instantiated into this field.
+// StorageEnvelope is a concrete envelope around an abstract Vault interface.
+// It provides a way to identify the instance of the key vault that's in use.
+type StorageEnvelope struct {
+	VaultType  VaultType       `json:"vaultType"`  // The dynamic vault type, used for marshal/unmarshal
+	Properties json.RawMessage `json:"properties"` // The concrete Vault is marshalled into this field.
+	vault      Vault           // The vault is instantiated into this field.
 }
 
-// PrivateKeyStore provides a mechanism whereby a private key can be wrapped
+// Vault provides a mechanism whereby sensitive data (private key, auth tokens) can be wrapped
 // using a variety of methods. This might include storing the private key offboard,
 // e.g. via macOS keychain.
-//
-// Note that there is only a single, canonical private key per endpoint - the key from which the
-// public key is derived - but that key can be encoded and stored in multiple ways. To add a new
-// encoding (say, touch ID), it's necessary to first use an existing encoding to retreive the underlying key.
-type PrivateKeyStore interface {
-	Type() KeyStoreType             // Returns the type of this store
-	IsUnsealed() bool               // Indicates if the private key has been unsealed.
-	Unseal() error                  // Requests that the private key be unsealed.
-	GetPrivateKey() ([]byte, error) // Requests the private key material
-	Marshal() ([]byte, error)       // Marshal to JSON
-	Unmarshal([]byte) error         // Unmarshal to the type.
+type Vault interface {
+	Type() VaultType                    // Returns the type of this store
+	IsUnsealed() bool                   // Indicates if the private key has been unsealed.
+	Unseal() error                      // Requests that the private key be unsealed.
+	Get(key string) ([]byte, error)     // Requests the decrypted material
+	Set(key string, value []byte) error // Sets the value for the given key
+	Marshal() ([]byte, error)           // Marshal to JSON
+	Unmarshal([]byte) error             // Unmarshal to the type.
 }
 
 // Endpoint represents a single server as seen from a Client.
 // Most of the configuration is specific to the selected server.
+//
+// Note that there is only a single, canonical private key per endpoint - the key from which the
+// public key is derived - but that key can be encoded and stored in multiple vaults. To add a new
+// vault (say, touch ID), it's necessary to first use an existing encoding to retrieve the underlying key.
 type Endpoint struct {
-	URL              string                `json:"url"`              // Endpoint URL
-	Alias            string                `json:"alias"`            // Alias for this user
-	ServerKey        []byte                `json:"serverKey"`        // Public key of this server
-	PrivateKeyStores []*PrivateKeyEnvelope `json:"privateKeyStores"` // Set of private keys, in order of user preference.
-	PublicKey        []byte                `json:"publicKey"`        // Public key for the private key
-	Peers            map[string]*Peer      `json:"peers"`            // Contains info about other users
+	URL       string             `json:"url"`       // Endpoint URL
+	Alias     string             `json:"alias"`     // Alias for this user
+	ServerKey []byte             `json:"serverKey"` // Public key of this server
+	Vaults    []*StorageEnvelope `json:"vaults"`    // Storage for sensitive data such as private keys and server tokens.
+	PublicKey []byte             `json:"publicKey"` // Public key for the private key
+	Peers     map[string]*Peer   `json:"peers"`     // Contains info about other users
 
 	// Any newly-added peers are added to this list so we can display them on exit.
 	newPeers []*Peer
@@ -200,15 +202,15 @@ func (config *Config) GetFileStore(filename string) (string, error) {
 	return secretStore + "/" + uuname, nil
 }
 
-func NewKeyStore(endpoint *Endpoint, storeType KeyStoreType, privateKey []byte) (PrivateKeyStore, error) {
+func NewVault(endpoint *Endpoint, storeType VaultType) (Vault, error) {
 	switch storeType {
-	case KeyStoreClear:
-		return NewClearKeyStore(privateKey), nil
-	case KeyStorePassword:
+	case VaultClear:
+		return NewClearVault(), nil
+	case VaultPassword:
 		// TODO
 		return nil, fmt.Errorf("unsupported key store type: %s", storeType)
-	case KeyStorePlatform:
-		return NewPlatformKeyStore(endpoint, privateKey)
+	case VaultPlatform:
+		return NewPlatformSecureStore(endpoint)
 	default:
 		return nil, fmt.Errorf("unsupported key store type: %s", storeType)
 
@@ -236,7 +238,7 @@ func (config *Config) DeleteEndpoint(alias, endpointURL string) {
 
 // AddEndpoint adds a new server to the config, and generates a new, cleartext keypair for that server.
 // This function will only replace an existing endpoint for the given (alias, endpointURL) if force is true.
-func (config *Config) AddEndpoint(alias, endpointURL string, storeType KeyStoreType, force bool) error {
+func (config *Config) AddEndpoint(alias, endpointURL string, storeType VaultType, force bool) error {
 
 	// Check if there's an existing enrolment; abort if force isn't set.
 	existingEndpoint := config.GetEndpoint(alias, endpointURL)
@@ -264,13 +266,17 @@ func (config *Config) AddEndpoint(alias, endpointURL string, storeType KeyStoreT
 		Peers:     make(map[string]*Peer),
 	}
 
-	keyStore, err := NewKeyStore(newEndpoint, storeType, private[:])
+	vault, err := NewVault(newEndpoint, storeType)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to initialise vaule: %w", err)
 	}
 
-	newEndpoint.PrivateKeyStores = []*PrivateKeyEnvelope{
-		{Type: storeType, keyStore: keyStore},
+	if err = vault.Set("privateKey", private[:]); err != nil {
+		return fmt.Errorf("unable to store private key: %w", err)
+	}
+
+	newEndpoint.Vaults = []*StorageEnvelope{
+		{VaultType: storeType, vault: vault},
 	}
 
 	err = newEndpoint.enrol()
@@ -301,13 +307,13 @@ func (config *Config) Set(expression string) error {
 }
 
 // Marshal returns the JSON representation of the config. Before marshalling, it updates the
-// KeyStore JSON representation, which enables load/save of the underlying interface data.
+// Vault JSON representation, which enables load/save of the underlying interface data.
 func (config *Config) Marshal() ([]byte, error) {
 	var err error
 
 	for _, server := range config.Endpoints {
-		for _, key := range server.PrivateKeyStores {
-			key.Properties, err = key.keyStore.Marshal()
+		for _, key := range server.Vaults {
+			key.Properties, err = key.vault.Marshal()
 			if err != nil {
 				return nil, err
 			}
@@ -318,7 +324,7 @@ func (config *Config) Marshal() ([]byte, error) {
 }
 
 // Unmarshal reads JSON and updates the associated config. As part of the unmarshalling process,
-// it creates concrete KeyStore instances (PrivateKeyStore interface) based on the PrivateKeyEnvelope
+// it creates concrete vault instances (Vault interface) based on the StorageEnvelope
 // types.
 func (config *Config) Unmarshal(data []byte) error {
 	err := json.Unmarshal(data, config)
@@ -327,25 +333,25 @@ func (config *Config) Unmarshal(data []byte) error {
 	}
 
 	for _, server := range config.Endpoints {
-		for _, key := range server.PrivateKeyStores {
-			switch key.Type {
-			case KeyStoreClear:
-				ks := &ClearKeyStore{}
+		for _, key := range server.Vaults {
+			switch key.VaultType {
+			case VaultClear:
+				ks := &ClearVault{}
 				err = ks.Unmarshal(key.Properties)
 				if err != nil {
 					return err
 				}
 
-				key.keyStore = ks
+				key.vault = ks
 
-			case KeyStorePlatform:
-				ks := &PlatformKeyStore{}
+			case VaultPlatform:
+				ks := &PlatformVault{}
 				err = ks.Unmarshal(key.Properties)
 				if err != nil {
 					return err
 				}
 
-				key.keyStore = ks
+				key.vault = ks
 			}
 		}
 	}

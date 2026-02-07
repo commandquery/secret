@@ -4,39 +4,44 @@ import (
 	"encoding/json"
 )
 
-// ClearKeyStore is a keystore that stores the private key in cleartext.
+// ClearVault is a vault that stores values in cleartext. Not much of a vault.
 // You shouldn't use it if you have a choice, but it is certainly helpful for testing,
 // and for devices that don't have any cryptographic key infrastructure.
-type ClearKeyStore struct {
-	PrivateKey []byte `json:"privateKey"`
+type ClearVault struct {
+	Values map[string][]byte `json:"values"`
 }
 
-func NewClearKeyStore(privateKey []byte) *ClearKeyStore {
-	return &ClearKeyStore{
-		PrivateKey: privateKey,
+func NewClearVault() *ClearVault {
+	return &ClearVault{
+		Values: make(map[string][]byte),
 	}
 }
 
-func (s *ClearKeyStore) Type() KeyStoreType {
-	return KeyStoreClear
+func (s *ClearVault) Type() VaultType {
+	return VaultClear
 }
 
-func (s *ClearKeyStore) IsUnsealed() bool {
+func (s *ClearVault) IsUnsealed() bool {
 	return true
 }
 
-func (s *ClearKeyStore) Unseal() error {
+func (s *ClearVault) Unseal() error {
 	return nil
 }
 
-func (s *ClearKeyStore) GetPrivateKey() ([]byte, error) {
-	return s.PrivateKey, nil
+func (s *ClearVault) Get(key string) ([]byte, error) {
+	return s.Values[key], nil
 }
 
-func (s *ClearKeyStore) Marshal() ([]byte, error) {
+func (s *ClearVault) Set(key string, value []byte) error {
+	s.Values[key] = value
+	return nil
+}
+
+func (s *ClearVault) Marshal() ([]byte, error) {
 	return json.Marshal(s)
 }
 
-func (s *ClearKeyStore) Unmarshal(bytes []byte) error {
+func (s *ClearVault) Unmarshal(bytes []byte) error {
 	return json.Unmarshal(bytes, s)
 }

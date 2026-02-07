@@ -96,6 +96,7 @@ type ActivationRequest struct {
 
 type ActivationResponse struct {
 	Message string `json:"message"`
+	Token   []byte `json:"token"`
 }
 
 // Claims is server-sealed metadata containing identifying information about the sender and message.

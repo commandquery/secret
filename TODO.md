@@ -3,21 +3,15 @@
 
 ## Client
 
-- [ ] strengthen GetSignature() / authentication:
-  - [ ] enrolment/auth should respond with a server-secret token containing the peer details, + public key
-  - [ ] that's what we save on the client
-  - [ ] we should just use the server-secret token in the signature.
 - [ ] make sure the client config field names match the server-side names
   - eg server.publicKey should probably be publicBoxKey? publicSignKey?
 - [ ] endpoints might have multiple primary keys (senders) but shouldn't they share the peers list?
-- [ ] how to deal with public key changes
+- [ ] how to deal with public key changes? / re-enrolment?
 - [ ] how to prevent unwanted messages / spam? block user until authorised? block/report address?
-  - [ ] require invite
-  - [ ] needs block lists
+  - [ ] require invite from one side?
+  - [ ] block lists?
 
 ## Website
-
-- [ ] remove google fonts and tailwind cdn / privacy
 
 ## Server
 
@@ -135,3 +129,11 @@
 - [X] add server-sealed claims to messages
 - [X] use claim data in ls and get
 - [X] remove sender from message table
+- [X] strengthen GetSignature() / authentication:
+    - [X] enrolment/auth should respond with a server-secret token containing the peer details, + public key
+    - [X] save the token using the same mechanism as password (eg, platform)
+    - [X] send the token in all calls
+    - [X] decrypt the token on the server side, replace signature with token
+    - [X] remove old signature code/headers from the client side
+- [X] remove google fonts and tailwind cdn / privacy
+- [X] auth token needs an issue time rather than a token ID, to enable revocation / forced logout

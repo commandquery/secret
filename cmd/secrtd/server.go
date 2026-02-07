@@ -9,14 +9,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
-	"time"
 
 	"github.com/commandquery/secrt"
 	"github.com/commandquery/secrt/jtp"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/nacl/box"
+	"golang.org/x/crypto/nacl/secretbox"
 	"golang.org/x/crypto/nacl/sign"
 )
 
@@ -32,6 +31,13 @@ type SecretServer struct {
 	PublicBoxKey   []byte
 	PrivateSignKey []byte
 	PublicSignKey  []byte
+}
+
+type AuthenticationToken struct {
+	Issued    int64     `json:"issued"`
+	Peer      uuid.UUID `json:"peer"`
+	Alias     string    `json:"alias"`
+	PublicKey []byte    `json:"publicKey"`
 }
 
 // NewSecretServer returns a new SecretServer with a unique private and public key.
@@ -76,6 +82,33 @@ func GetSecretServer(hostname string) (*SecretServer, error) {
 	return &server, nil
 }
 
+// Encrypt an object with the server's secret key. This is used for authentication tokens.
+func (server *SecretServer) EncryptSecret(message []byte) ([]byte, error) {
+	var nonce [24]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, err
+	}
+
+	encrypted := secretbox.Seal(nonce[:], message, &nonce, secrt.To32(server.SecretBoxKey))
+	return encrypted, nil
+}
+
+func (server *SecretServer) DecryptSecret(encrypted []byte) ([]byte, error) {
+	if len(encrypted) < 24 {
+		return nil, errors.New("ciphertext too short")
+	}
+
+	var nonce [24]byte
+	copy(nonce[:], encrypted[:24])
+
+	message, ok := secretbox.Open(nil, encrypted[24:], &nonce, secrt.To32(server.SecretBoxKey))
+	if !ok {
+		return nil, errors.New("decryption failed")
+	}
+
+	return message, nil
+}
+
 func (server *SecretServer) GetPeer(alias string) (*Peer, bool) {
 	ctx := context.Background()
 
@@ -98,53 +131,36 @@ func (server *SecretServer) GetPeer(alias string) (*Peer, bool) {
 }
 
 func (server *SecretServer) Authenticate(r *http.Request) (*Peer, *jtp.HTTPError) {
-	sig := r.Header.Get("Signature")
-	if sig == "" {
-		return nil, jtp.UnauthorizedError(fmt.Errorf("missing signature header"))
+
+	token := r.Header.Get("Authorization")
+	if token == "" {
+		return nil, jtp.UnauthorizedError(fmt.Errorf("missing authorization header"))
 	}
 
-	// Signature is base64-encoded JSON
-	js, err := base64.StdEncoding.DecodeString(sig)
+	if len(token) < 8 {
+		return nil, jtp.UnauthorizedError(fmt.Errorf("invalid authorization token"))
+	}
+
+	token = token[7:]
+
+	authTokenCipher, err := base64.StdEncoding.DecodeString(token)
 	if err != nil {
-		return nil, jtp.UnauthorizedError(fmt.Errorf("invalid signature encoding: %w", err))
+		return nil, jtp.UnauthorizedError(fmt.Errorf("unable to decode token: %w", err))
 	}
 
-	var signature secrt.Signature
-	if err = json.Unmarshal(js, &signature); err != nil {
-		return nil, jtp.UnauthorizedError(fmt.Errorf("invalid signature: %w", err))
-	}
-
-	ciphertext := signature.Sig
-
-	// Check that the version number works with us.
-	if ciphertext[0] != 0 {
-		return nil, jtp.UnauthorizedError(fmt.Errorf("signature version %d is not supported", ciphertext[0]))
-	}
-
-	peer, ok := server.GetPeer(signature.Peer)
-	if !ok {
-		return nil, jtp.UnauthorizedError(fmt.Errorf("unknown peer %q", signature.Peer))
-	}
-
-	var nonce [24]byte
-	copy(nonce[:], ciphertext[1:25])
-
-	var out []byte
-	plaintext, ok := box.Open(out, ciphertext[25:], &nonce, secrt.To32(peer.PublicKey), secrt.To32(server.PrivateBoxKey))
-	if !ok {
-		return nil, jtp.UnauthorizedError(fmt.Errorf("failed authenticate message from %s", peer.Alias))
-	}
-
-	timestamp, err := strconv.ParseInt(string(plaintext), 10, 64)
+	tokenJs, err := server.DecryptSecret(authTokenCipher)
 	if err != nil {
-		return nil, jtp.UnauthorizedError(fmt.Errorf("invalid timestamp: %w", err))
+		return nil, jtp.BadRequestError(fmt.Errorf("unable to decrypt token: %w", err))
 	}
 
-	// check time window
-	now := time.Now().Unix()
-	diff := now - timestamp
-	if diff > Config.SignatureSkew || diff < -Config.SignatureSkew {
-		return nil, jtp.UnauthorizedError(errors.New("signature expired"))
+	var authToken AuthenticationToken
+	if err := json.Unmarshal(tokenJs, &authToken); err != nil {
+		return nil, jtp.BadRequestError(fmt.Errorf("unable to unmarshal token: %w", err))
+	}
+
+	peer, ok := server.GetPeer(authToken.Alias)
+	if !ok {
+		return nil, jtp.UnauthorizedError(fmt.Errorf("unknown peer %q", authToken.Alias))
 	}
 
 	return peer, nil

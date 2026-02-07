@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/commandquery/secrt"
 	"github.com/commandquery/secrt/jtp"
@@ -29,7 +28,7 @@ var ErrSecretTooBig error = errors.New("secret too big")
 // (unsigned requests, headers, etc).
 func Call[S any, R any](endpoint *Endpoint, s *S, r *R, method string, path ...string) error {
 
-	headers, err := endpoint.GetSignature()
+	headers, err := endpoint.GetAuthHeader()
 	if err != nil {
 		return fmt.Errorf("unable to set signature: %w", err)
 	}
@@ -119,34 +118,16 @@ func (endpoint *Endpoint) PrintNewPeers() {
 	}
 }
 
-// GetSignature returns a Signature header, which is just the peer ID
-// followed by the current timestamp, encrypted for the server itself.
-// This authenticates us to the server within the request header, giving
-// us strong access control without a handshake.
-//
-// The peer ID must be in cleartext because that's how the server finds
-// the public key, which is then used to decrypt the signed object.
-func (endpoint *Endpoint) GetSignature() (http.Header, error) {
-	msg := fmt.Sprintf("%d", time.Now().Unix())
-
-	ciphertext, err := endpoint.Encrypt([]byte(msg), endpoint.ServerKey)
+// GetAuthHeader returns a Signature header, which is just the auth token provided at activation.
+func (endpoint *Endpoint) GetAuthHeader() (http.Header, error) {
+	token, err := endpoint.GetSecretValue("authToken")
 	if err != nil {
-		return nil, fmt.Errorf("unable to generate signature: %w", err)
+		return nil, fmt.Errorf("unable to get auth token: %w", err)
 	}
-
-	// entire signature is json encoded to avoid issues with little bobby table's peer ID.
-	signature := &secrt.Signature{
-		Peer: endpoint.Alias,
-		Sig:  ciphertext,
-	}
-
-	js, err := json.Marshal(signature)
-	if err != nil {
-		return nil, fmt.Errorf("unable to marshal signature: %w", err)
-	}
+	token64 := base64.StdEncoding.EncodeToString(token)
 
 	var header http.Header = make(http.Header)
-	header.Set("Signature", base64.StdEncoding.EncodeToString(js))
+	header.Set("Authorization", "Bearer "+token64)
 	return header, nil
 }
 
@@ -180,32 +161,41 @@ func readInput(filename string) ([]byte, *secrt.Metadata, error) {
 	return cleartext, metadata, nil
 }
 
-func (endpoint *Endpoint) GetPrivateKey() ([]byte, error) {
-	if len(endpoint.PrivateKeyStores) == 0 {
-		return nil, fmt.Errorf("no private key store found")
+func (endpoint *Endpoint) GetSecretValue(key string) ([]byte, error) {
+	vault, err := endpoint.GetVault()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get vault: %w", err)
 	}
 
-	// Try to find an unsealed key.
-	for _, key := range endpoint.PrivateKeyStores {
-		if key.keyStore != nil {
-			if key.keyStore.IsUnsealed() {
-				return key.keyStore.GetPrivateKey()
+	return vault.Get(key)
+}
+
+func (endpoint *Endpoint) GetVault() (Vault, error) {
+	if len(endpoint.Vaults) == 0 {
+		return nil, fmt.Errorf("no vaults found")
+	}
+
+	// Try to find an unsealed vault.
+	for _, envelope := range endpoint.Vaults {
+		if envelope.vault != nil {
+			if envelope.vault.IsUnsealed() {
+				return envelope.vault, nil
 			}
 		}
 	}
 
-	// Try to unseal the first key.
-	envelope := endpoint.PrivateKeyStores[0]
+	// Try to unseal the first vault.
+	envelope := endpoint.Vaults[0]
 
-	if envelope.keyStore != nil {
-		if err := envelope.keyStore.Unseal(); err != nil {
-			return nil, fmt.Errorf("unable to unseal private key: %w", err)
+	if envelope.vault != nil {
+		if err := envelope.vault.Unseal(); err != nil {
+			return nil, fmt.Errorf("unable to unseal vault: %w", err)
 		}
 
-		return envelope.keyStore.GetPrivateKey()
+		return envelope.vault, nil
 	}
 
-	return nil, fmt.Errorf("no private key found")
+	return nil, fmt.Errorf("no vault found")
 }
 
 func (endpoint *Endpoint) Encrypt(plaintext []byte, peerKey []byte) ([]byte, error) {
@@ -224,7 +214,7 @@ func (endpoint *Endpoint) Encrypt(plaintext []byte, peerKey []byte) ([]byte, err
 	// Append the nonce, which is a fixed length (24 bytes).
 	ciphertext = append(ciphertext, nonce[:]...)
 
-	privateKey, err := endpoint.GetPrivateKey()
+	privateKey, err := endpoint.GetSecretValue("privateKey")
 	if err != nil {
 		return nil, err
 	}
@@ -256,7 +246,7 @@ func (endpoint *Endpoint) Decrypt(config *Config, peerKey []byte, ciphertext []b
 	var nonce [24]byte
 	copy(nonce[:], ciphertext[1:25])
 
-	privateKey, err := endpoint.GetPrivateKey()
+	privateKey, err := endpoint.GetSecretValue("privateKey")
 	if err != nil {
 		return nil, err
 	}
