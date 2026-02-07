@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"flag"
 	"fmt"
 	"os"
@@ -29,10 +31,42 @@ func CmdGet(config *Config, endpoint *Endpoint, args []string) error {
 		return fmt.Errorf("unable to get message %s: %w", args[0], err)
 	}
 
-	cleartext, err := endpoint.Decrypt(config, message.Sender, message.Payload)
+	claims, err := endpoint.GetClaims(config, message.Claims)
+	if err != nil {
+		return fmt.Errorf("unable to get claims: %w", err)
+	}
 
+	// Verify that the claimed public key matches the published public key
+	// for the given peer. The public key is cached, which results in the peer
+	// being added to the user's config, if it doesn't already exist.
+	// GetPeer is gated by AcceptPeers, so this stops an unknown peer's
+	// message from being readable. Note that the "ls" command doesn't do these
+	// checks.
+	peer, err := endpoint.GetPeer(config, claims.Alias)
+	if err != nil {
+		return fmt.Errorf("unable to get peer %s: %w", claims.Alias, err)
+	}
+
+	if !bytes.Equal(peer.PublicKey, claims.PublicKey) {
+		return fmt.Errorf("message claim does not match public key")
+	}
+
+	cleartext, err := endpoint.Decrypt(config, claims.PublicKey, message.Payload)
 	if err != nil {
 		return fmt.Errorf("unable to decrypt message: %w", err)
+	}
+
+	// Verify that the claim contains hashes that match the actual payload and metadata.
+	// Since the claim is signed by the server but the message data is sent by a peer,
+	// this is intended to ensure that server-generated claims can't be replayed.
+	payloadHash := sha256.Sum256(message.Payload)
+	if !bytes.Equal(payloadHash[:], claims.PayloadHash) {
+		return fmt.Errorf("payload claim does not match message payload")
+	}
+
+	metadataHash := sha256.Sum256(message.Metadata)
+	if !bytes.Equal(metadataHash[:], claims.MetadataHash) {
+		return fmt.Errorf("metadata claim does not match message metadata")
 	}
 
 	var target = os.Stdout

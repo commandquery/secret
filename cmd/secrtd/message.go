@@ -17,14 +17,15 @@ import (
 // Message is the internal representation of a message. Use secrt.Message to
 // transfer a message to a client.
 type Message struct {
-	Server      uuid.UUID
-	Peer        uuid.UUID
-	Message     uuid.UUID
-	Sender      uuid.UUID
+	Server  uuid.UUID
+	Peer    uuid.UUID
+	Message uuid.UUID
+	//Sender      uuid.UUID
 	SenderAlias string
 	Received    time.Time
 	Metadata    []byte
 	Payload     []byte
+	Claims      []byte
 }
 
 func (server *SecretServer) handlePostMessage(r *http.Request, envelope *secrt.SendRequest) (*secrt.SendResponse, error) {
@@ -44,18 +45,24 @@ func (server *SecretServer) handlePostMessage(r *http.Request, envelope *secrt.S
 	}
 
 	newMessage := &Message{
-		Server:      server.Server,
-		Peer:        recipient.Peer,
-		Message:     uuid.New(),
-		Sender:      sender.Peer,
+		Server:  server.Server,
+		Peer:    recipient.Peer,
+		Message: uuid.New(),
+		//Sender:      sender.Peer,
 		SenderAlias: sender.Alias,
 		Received:    time.Now(),
 		Metadata:    envelope.Metadata,
 		Payload:     envelope.Payload,
 	}
 
-	_, err := PGXPool.Exec(r.Context(), "insert into secrt.message (server, peer, message, sender, received, metadata, payload) values ($1, $2, $3, $4, $5, $6, $7)",
-		newMessage.Server, newMessage.Peer, newMessage.Message, newMessage.Sender, newMessage.Received, envelope.Metadata, envelope.Payload)
+	var err error
+	newMessage.Claims, err = server.GetClaims(newMessage, sender, recipient)
+	if err != nil {
+		return nil, fmt.Errorf("unable to set message claims: %w", err)
+	}
+
+	_, err = PGXPool.Exec(r.Context(), "insert into secrt.message (server, peer, message, received, metadata, payload, claims) values ($1, $2, $3, $4, $5, $6, $7)",
+		newMessage.Server, newMessage.Peer, newMessage.Message, newMessage.Received, envelope.Metadata, envelope.Payload, newMessage.Claims)
 	if err != nil {
 		return nil, jtp.InternalServerError(fmt.Errorf("unable to insert message: %w", err))
 	}
@@ -97,6 +104,7 @@ func (server *SecretServer) handleGetMessage(r *http.Request, _ *jtp.None) (*sec
 		Timestamp: msg.Received.Unix(),
 		Metadata:  msg.Metadata,
 		Payload:   msg.Payload,
+		Claims:    msg.Claims,
 	}, nil
 }
 
@@ -145,7 +153,7 @@ func (msg *Message) Delete() error {
 func GetMessage(peer *Peer, messageId string) (*Message, error) {
 
 	ctx := context.Background()
-	msgQuery := "select message, sender, peer.alias, received, metadata, payload from secrt.message join secrt.peer on (peer.server = message.server and peer.peer = message.sender) "
+	msgQuery := "select message, received, metadata, payload, claims from secrt.message "
 
 	var rows pgx.Rows
 	var sqlErr error
@@ -184,7 +192,7 @@ func GetMessage(peer *Peer, messageId string) (*Message, error) {
 		Peer:   peer.Peer,
 	}
 
-	if err := rows.Scan(&msg.Message, &msg.Sender, &msg.SenderAlias, &msg.Received, &msg.Metadata, &msg.Payload); err != nil {
+	if err := rows.Scan(&msg.Message, &msg.Received, &msg.Metadata, &msg.Payload, &msg.Claims); err != nil {
 		return nil, fmt.Errorf("unable to read message: %w", err)
 	}
 

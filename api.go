@@ -19,6 +19,7 @@ type Message struct {
 	Size      int       `json:"size"`     // encrypted size. used as a hint.
 	Metadata  []byte    `json:"metadata"` // encrypted metadata, contains unencrypted size.
 	Payload   []byte    `json:"payload"`  // note that this is empty for inbox lookups
+	Claims    []byte    `json:"claims"`   // server-sealed claims for this message, including sender
 }
 
 type Metadata struct {
@@ -95,4 +96,14 @@ type ActivationRequest struct {
 
 type ActivationResponse struct {
 	Message string `json:"message"`
+}
+
+// Claims is server-sealed metadata containing identifying information about the sender and message.
+type Claims struct {
+	Message      uuid.UUID `json:"message"`
+	Alias        string    `json:"alias"`
+	PublicKey    []byte    `json:"publicKey"`
+	PayloadHash  []byte    `json:"payloadHash"`
+	MetadataHash []byte    `json:"metadataHash,omitzero"`
+	Timestamp    int64     `json:"timestamp"`
 }

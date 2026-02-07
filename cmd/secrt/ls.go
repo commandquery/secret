@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -79,17 +78,15 @@ func getLsEntry(config *Config, endpoint *Endpoint, msg *secrt.Message) *lsEntry
 
 	var metadata secrt.Metadata
 
-	metajs, err := endpoint.Decrypt(config, msg.Sender, msg.Metadata)
+	claims, err := endpoint.GetClaims(config, msg.Claims)
 	if err != nil {
-
-		// If the peer's unknown, just note it in the listing.
-		if errors.Is(err, ErrUnknownPeer) {
-			entry.FileDescription = "unknown peer"
-			return entry
-		}
-
-		entry.FileDescription = fmt.Sprintf("unable to decrypt metadata: %v", err)
+		entry.FileDescription = "invalid claims"
 		return entry
+	}
+
+	metajs, err := endpoint.Decrypt(config, claims.PublicKey, msg.Metadata)
+	if err != nil {
+		entry.FileDescription = "invalid claim key"
 	}
 
 	if err = json.Unmarshal(metajs, &metadata); err != nil {
@@ -100,6 +97,7 @@ func getLsEntry(config *Config, endpoint *Endpoint, msg *secrt.Message) *lsEntry
 	entry.Size = metadata.Size
 	entry.Filename = metadata.Filename
 	entry.Description = metadata.Description
+	entry.Sender = claims.Alias
 
 	if metadata.Description != "" {
 		entry.FileDescription = fmt.Sprintf("%s (%s)", metadata.Filename, metadata.Description)
